@@ -100,7 +100,9 @@ npm run migration:run
 
 ## Roadmap
 
-- **Fase 6**: OpenAPI drift check propio, `render.yaml` con `preDeployCommand`, CI/cron workflows, rutas limpias (`/dtes`, `/rcof`, `/credentials`, `/webhooks`)
+- **Fase 6** ✅: OpenAPI drift check propio, `render.yaml`, CI/cron workflows, rutas limpias (`/dtes`, `/rcof`, `/credentials`, `/webhooks`)
+- **Deploy** ✅: Pusheado a GitHub (`https://github.com/angelo121514/cmorflow-tax-api`, público) + servicio Render free (`https://cmorflow-tax-api.onrender.com`)
+- **Pendiente**: configurar `DB_PASSWORD` y `SII_MASTER_KEY` reales en Render Dashboard → Environment
 - **Fase 7**: El ERP deja de emitir DTE directamente y consume la Tax API por HTTP. Se elimina el código B2B duplicado del ERP.
 - **Futuro**: Separación física de esquema `tax` en Postgres (regla: una tabla = un dueño)
 
@@ -108,6 +110,17 @@ npm run migration:run
 
 - [Guía de integración](docs/integrations/GUIDE.md) — firma HMAC, verificación de webhooks, reintentos, reconciliación
 - [Colección Postman](docs/integrations/cmorapr.postman_collection.json) — pruebas listas
+
+## Deploy en Render
+
+El servicio `cmorflow-tax-api` (plan free) está creado en Render. Detalles importantes del build:
+
+- **Build**: `npm ci && npm run build` — el script `build` usa `tsc` directo (no `@nestjs/cli`, que no se instala con `NODE_ENV=production`)
+- **Types en dependencies**: `typescript`, `@types/node-forge`, `@types/pdfkit`, `@types/supertest`, `tsconfig-paths`, `ts-node` están en `dependencies` (no devDependencies) porque `npm ci` en prod omite devDeps
+- **rootDir=src**: el JS compilado queda en `dist/main.js` (no `dist/src/main.js`)
+- **start-prod.js**: registra `tsconfig-paths` con `baseUrl=dist` para resolver los paths `@domain/@application/etc.` en runtime
+- **`AUTO_RUN_MIGRATIONS=true`** en el servicio: al arrancar corre la migración `1805000000000` (crea las 7 tablas B2B)
+- **Secrets pendientes**: `DB_PASSWORD` y `SII_MASTER_KEY` deben configurarse en el Dashboard (no se pueden poner por API)
 
 ## Origen
 

@@ -2,6 +2,8 @@
 
 CmorFlow Tax API es la **plataforma tributaria central** de CmorFlow: facturación electrónica chilena vía API. El ERP, el POS, e-commerce (Shopify, WooCommerce) y cualquier SaaS externo consumen esta API para emitir DTEs, generar RCOF y recibir webhooks — sin necesitar el ERP.
 
+**URL base (Render staging):** `https://cmorflow-tax-api.onrender.com/api/v1`
+
 ## Resumen del flujo
 
 1. **Autenticación HMAC** por credencial ligada a un único tenant.
