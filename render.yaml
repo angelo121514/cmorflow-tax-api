@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: cmorflow-tax-api
+    runtime: node
+    region: ohio
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/v1/ready
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTO_RUN_MIGRATIONS
+        value: "false"
+      - key: PORT
+        value: "10000"
+      - key: DB_HOST
+        value: aws-1-us-east-2.pooler.supabase.com
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        value: cmorflow_app.wirwadxtrblslfwayple
+      - key: DB_PASSWORD
+        value: "REPLACE_ME"
+      - key: DB_NAME
+        value: postgres
+      - key: DB_SCHEMA
+        value: public
+      - key: DB_SSL
+        value: "true"
+      - key: SII_MASTER_KEY
+        value: "REPLACE_ME"
+      - key: SII_INTEGRATION_MODE
+        value: mock
+      - key: SII_ENVIRONMENT
+        value: certification
+      - key: SII_XSD_VALIDATION_ENABLED
+        value: "false"
+      - key: INTEGRATIONS_API_ENABLED
+        value: "true"
+      - key: INTEGRATION_HMAC_WINDOW_SECONDS
+        value: "300"
+      - key: INTEGRATION_RATE_LIMIT_PER_MIN
+        value: "60"
+      - key: CRON_HMAC_SECRET
+        value: "REPLACE_ME"
+      - key: CORS_ORIGINS
+        value: ""

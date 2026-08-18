@@ -1,0 +1,1063 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/dtes": {
+      "post": {
+        "operationId": "DtesController_emit",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationDteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Solicitud aceptada y encolada."
+          },
+          "409": {
+            "description": "Conflicto de idempotencia o externalReference."
+          },
+          "422": {
+            "description": "Validación tributaria o totales."
+          }
+        },
+        "summary": "Emitir un DTE (33/34/39/41/46/52) de forma asíncrona",
+        "tags": [
+          "dtes"
+        ]
+      },
+      "get": {
+        "operationId": "DtesController_findByExternalReference",
+        "parameters": [
+          {
+            "name": "externalReference",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Reconciliar solicitudes por referencia externa",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{id}": {
+      "get": {
+        "operationId": "DtesController_getStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Estado de una solicitud (por requestId o dteId)",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{dteId}/credit-notes": {
+      "post": {
+        "operationId": "DtesController_creditNote",
+        "parameters": [
+          {
+            "name": "dteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Emitir nota de crédito (61) del documento original",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{dteId}/debit-notes": {
+      "post": {
+        "operationId": "DtesController_debitNote",
+        "parameters": [
+          {
+            "name": "dteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Emitir nota de débito (56) del documento original",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{dteId}/xml": {
+      "get": {
+        "operationId": "DtesController_downloadXml",
+        "parameters": [
+          {
+            "name": "dteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Descargar el XML firmado del DTE",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{dteId}/pdf": {
+      "get": {
+        "operationId": "DtesController_downloadPdf",
+        "parameters": [
+          {
+            "name": "dteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Descargar el PDF del DTE",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/dtes/{dteId}/artifact-links": {
+      "post": {
+        "operationId": "DtesController_artifactLinks",
+        "parameters": [
+          {
+            "name": "dteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Generar URLs firmadas de corta duración (XML y PDF)",
+        "tags": [
+          "dtes"
+        ]
+      }
+    },
+    "/api/v1/rcof": {
+      "post": {
+        "description": "Idempotente por tenant, fecha y secuencia.",
+        "operationId": "RcofController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationRcofDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Solicitar generación y transmisión del RCOF de una fecha",
+        "tags": [
+          "rcof"
+        ]
+      }
+    },
+    "/api/v1/rcof/{id}": {
+      "get": {
+        "operationId": "RcofController_getStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Estado del RCOF (estado, TrackID, respuesta SII)",
+        "tags": [
+          "rcof"
+        ]
+      }
+    },
+    "/api/v1/credentials": {
+      "post": {
+        "operationId": "CredentialsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationCredentialDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credencial creada con secreto inicial."
+          }
+        },
+        "summary": "[Admin] Crear credencial — el secreto se muestra UNA sola vez",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "get": {
+        "operationId": "CredentialsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Listar credenciales (enmascaradas)",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}/rotate": {
+      "post": {
+        "operationId": "CredentialsController_rotate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Rotar credencial — la antigua vive 24h de gracia",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}/revoke": {
+      "post": {
+        "operationId": "CredentialsController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Revocar credencial inmediatamente",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/webhooks": {
+      "post": {
+        "operationId": "WebhooksController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterWebhookEndpointDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Registrar endpoint webhook — secreto de firma se muestra una vez",
+        "tags": [
+          "webhooks"
+        ]
+      },
+      "get": {
+        "operationId": "WebhooksController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Listar endpoints webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/deactivate": {
+      "post": {
+        "operationId": "WebhooksController_deactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Desactivar endpoint webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/events/{eventId}/redeliver": {
+      "post": {
+        "operationId": "WebhooksController_redeliver",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Reenviar un evento webhook manualmente",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/deliveries": {
+      "get": {
+        "operationId": "WebhooksController_deliveries",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Historial de entregas webhook (últimas 50)",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/artifacts/{token}": {
+      "get": {
+        "operationId": "ArtifactsController_download",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Descargar artefacto con URL firmada (sin headers HMAC)",
+        "tags": [
+          "artifacts"
+        ]
+      }
+    },
+    "/api/v1/internal/cron/process-integrations": {
+      "post": {
+        "operationId": "CronController_processIntegrations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Reconciler: cola + polling SII + webhooks + purge (cada 5 min)",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/internal/cron/deliver-webhooks": {
+      "post": {
+        "operationId": "CronController_deliverWebhooks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Entrega de webhooks vencidos (cada 2 min)",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/internal/cron/rcof-daily": {
+      "post": {
+        "operationId": "CronController_rcofDaily",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "RCOF diario automático por tenant (diario 05:00 UTC)",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Proceso vivo (liveness)",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Listo para tráfico (readiness): Postgres + config + crypto",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "CmorFlow Tax API",
+    "description": "Plataforma tributaria B2B para facturación electrónica chilena vía API. Emisión asíncrona de DTE, RCOF, webhooks y artefactos XML/PDF. Autenticación HMAC por credencial ligada a un único tenant.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "dtes",
+      "description": "Emisión y consulta de DTE"
+    },
+    {
+      "name": "rcof",
+      "description": "Consumo de folios (RCOF)"
+    },
+    {
+      "name": "credentials",
+      "description": "Gestión de credenciales (admin)"
+    },
+    {
+      "name": "webhooks",
+      "description": "Gestión de webhooks (admin)"
+    },
+    {
+      "name": "artifacts",
+      "description": "Descarga de artefactos con URL firmada"
+    },
+    {
+      "name": "health",
+      "description": "Health checks"
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "integration-hmac": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+        "description": "Autenticación HMAC. Requiere X-Timestamp, X-Nonce y X-Signature. Credenciales API: cmor_live_*, admin: cmor_admin_*."
+      }
+    },
+    "schemas": {
+      "IntegrationReceiverDto": {
+        "type": "object",
+        "properties": {
+          "rut": {
+            "type": "string",
+            "example": "76123456-7",
+            "description": "RUT del receptor"
+          },
+          "name": {
+            "type": "string",
+            "example": "Empresa Cliente SpA"
+          },
+          "giro": {
+            "type": "string",
+            "example": "Servicios Informáticos"
+          },
+          "address": {
+            "type": "string",
+            "example": "Av. Vitacura 1234"
+          },
+          "commune": {
+            "type": "string",
+            "example": "Vitacura"
+          }
+        },
+        "required": [
+          "rut",
+          "name"
+        ]
+      },
+      "IntegrationItemDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Consumo de agua - Julio 2026"
+          },
+          "quantity": {
+            "type": "number",
+            "example": 1,
+            "description": "Cantidad (entera o decimal > 0)"
+          },
+          "unitPrice": {
+            "type": "number",
+            "example": 45000,
+            "description": "Precio unitario CLP (neto o bruto según pricingMode)"
+          },
+          "exempt": {
+            "type": "boolean",
+            "example": false,
+            "description": "Ítem exento (obligatorio true en tipos 34/41)"
+          },
+          "discountPercentage": {
+            "type": "number",
+            "example": 10,
+            "description": "Descuento por línea en % (0-100). Excluyente con discountAmount."
+          },
+          "discountAmount": {
+            "type": "number",
+            "example": 250,
+            "description": "Descuento por línea fijo CLP. Excluyente con discountPercentage."
+          }
+        },
+        "required": [
+          "name",
+          "quantity",
+          "unitPrice"
+        ]
+      },
+      "IntegrationReferenceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "number",
+            "example": 33
+          },
+          "folio": {
+            "type": "number",
+            "example": 154
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-06-01"
+          },
+          "reasonCode": {
+            "type": "number",
+            "example": 1,
+            "description": "1=Anula, 2=Corrige texto, 3=Corrige montos"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Error de digitación"
+          }
+        },
+        "required": [
+          "type",
+          "folio",
+          "date"
+        ]
+      },
+      "DteTransportDto": {
+        "type": "object",
+        "properties": {
+          "transferType": {
+            "type": "number",
+            "example": 1,
+            "description": "IndTraslado: 1=Venta, 2=Consignación, 3=Gratuita, 4=Comprobante, 5=Traslado interno, 6=Devolución"
+          },
+          "departureDate": {
+            "type": "string",
+            "example": "2026-08-10",
+            "description": "Fecha de salida (FchSalida)"
+          },
+          "departureTime": {
+            "type": "string",
+            "example": "09:00:00",
+            "description": "Hora de salida (HraSalida)"
+          },
+          "arrivalDate": {
+            "type": "string",
+            "example": "2026-08-10",
+            "description": "Fecha de llegada (FchLlegada)"
+          },
+          "originAddress": {
+            "type": "string",
+            "example": "Calle Origen 123",
+            "description": "Dirección de origen (DirOrigen)"
+          },
+          "originCommune": {
+            "type": "string",
+            "example": "Santiago",
+            "description": "Comuna de origen (CmnaOrigen)"
+          },
+          "destinationAddress": {
+            "type": "string",
+            "example": "Av. Destino 999",
+            "description": "Dirección de destino (DirDest)"
+          },
+          "destinationCommune": {
+            "type": "string",
+            "example": "Santiago",
+            "description": "Comuna de destino (CmnaDest)"
+          },
+          "carrierRut": {
+            "type": "string",
+            "example": "12345678-9",
+            "description": "RUT del transportista (RUTTrans)"
+          },
+          "driverRut": {
+            "type": "string",
+            "example": "12345678-9",
+            "description": "RUT del chofer (RUTChofer)"
+          },
+          "driverName": {
+            "type": "string",
+            "example": "Juan Pérez",
+            "description": "Nombre del chofer (NombreChofer)"
+          },
+          "vehiclePlate": {
+            "type": "string",
+            "example": "ABCD12",
+            "description": "Patente del vehículo"
+          },
+          "trailerPlate": {
+            "type": "string",
+            "example": "TRAILER1",
+            "description": "Patente del acoplado/remolque"
+          }
+        },
+        "required": [
+          "transferType",
+          "originAddress",
+          "originCommune",
+          "destinationAddress",
+          "destinationCommune"
+        ]
+      },
+      "DteTaxRetentionDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "number",
+            "example": 15,
+            "description": "Tipo de impuesto (15 = IVA Retenido Total)"
+          },
+          "rate": {
+            "type": "number",
+            "example": 19,
+            "description": "Tasa del impuesto (%)"
+          },
+          "amount": {
+            "type": "number",
+            "example": 161500,
+            "description": "Monto retenido en CLP"
+          }
+        },
+        "required": [
+          "type",
+          "amount"
+        ]
+      },
+      "IntegrationDeclaredTotalsDto": {
+        "type": "object",
+        "properties": {
+          "netAmount": {
+            "type": "number",
+            "example": 380672
+          },
+          "exemptAmount": {
+            "type": "number",
+            "example": 0
+          },
+          "ivaAmount": {
+            "type": "number",
+            "example": 72328
+          },
+          "totalAmount": {
+            "type": "number",
+            "example": 453000,
+            "description": "Si se declara, debe coincidir con el recálculo del servidor (tolerancia $1)"
+          }
+        }
+      },
+      "CreateIntegrationDteDto": {
+        "type": "object",
+        "properties": {
+          "documentType": {
+            "type": "number",
+            "example": 33,
+            "description": "33=Factura, 34=Exenta, 39=Boleta, 41=Boleta exenta, 46=Factura compra, 52=Guía (notas 56/61 vía endpoints dedicados)"
+          },
+          "receiver": {
+            "description": "Receptor. Obligatorio en 33/34/46/52; opcional en boletas 39/41.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationReceiverDto"
+              }
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationItemDto"
+            }
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationReferenceDto"
+            }
+          },
+          "pricingMode": {
+            "type": "string",
+            "example": "GROSS",
+            "description": "GROSS (IVA incluido) o NET. Default: GROSS en boletas, NET en facturas."
+          },
+          "indServicio": {
+            "type": "number",
+            "example": 3,
+            "description": "IndServicio boletas"
+          },
+          "indTraslado": {
+            "type": "number",
+            "example": 1,
+            "description": "IndTraslado para guía 52"
+          },
+          "transport": {
+            "description": "Transporte. Obligatorio en guía 52 (Res. SII 154/2025).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DteTransportDto"
+              }
+            ]
+          },
+          "taxRetentions": {
+            "description": "Retenciones (T46)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DteTaxRetentionDto"
+            }
+          },
+          "globalDiscountPercentage": {
+            "type": "number",
+            "example": 5,
+            "description": "Descuento global % a ítems afectos"
+          },
+          "totals": {
+            "description": "Totales declarados: el servidor recalcula y valida; divergencia > $1 → 422.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationDeclaredTotalsDto"
+              }
+            ]
+          },
+          "externalReference": {
+            "type": "string",
+            "example": "APR-CONSUMO-88021",
+            "description": "Referencia de negocio del integrador, única por tenant. Para anulación/reconciliación."
+          },
+          "metadata": {
+            "type": "object",
+            "example": {
+              "periodoApr": "2026-07",
+              "numeroCuenta": "CTA-88021"
+            },
+            "description": "Datos propios del integrador (se repiten en estado y webhooks)."
+          }
+        },
+        "required": [
+          "documentType",
+          "items"
+        ]
+      },
+      "CreateIntegrationNoteDto": {
+        "type": "object",
+        "properties": {
+          "reasonCode": {
+            "type": "number",
+            "example": 1,
+            "description": "Código de referencia: 1=Anula, 2=Corrige texto, 3=Corrige montos"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Anula documento por error de emisión"
+          },
+          "items": {
+            "description": "Líneas de la nota (en anulación: línea simbólica $0).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationItemDto"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/IntegrationDeclaredTotalsDto"
+          },
+          "externalReference": {
+            "type": "string",
+            "example": "NC-CONSUMO-88021"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "reasonCode",
+          "reason",
+          "items"
+        ]
+      },
+      "CreateIntegrationRcofDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "example": "2026-08-14",
+            "description": "Fecha del consumo de folios (YYYY-MM-DD)"
+          },
+          "sequenceNumber": {
+            "type": "number",
+            "example": 1,
+            "description": "Secuencia del envío (default 1; >1 para reenvíos corregidos)"
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "CreateIntegrationCredentialDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "CMORAPR staging"
+          },
+          "credentialType": {
+            "type": "string",
+            "example": "api",
+            "enum": [
+              "api",
+              "admin"
+            ],
+            "description": "Tipo: api (cmor_live_*) para integradores, admin (cmor_admin_*) para gestión"
+          },
+          "permissions": {
+            "type": "string",
+            "example": [
+              "dte:emit",
+              "dte:read",
+              "artifacts:read"
+            ],
+            "enum": [
+              "dte:emit",
+              "dte:read",
+              "dte:cancel",
+              "rcof:submit",
+              "rcof:read",
+              "artifacts:read",
+              "webhooks:read",
+              "webhooks:write",
+              "credentials:read",
+              "credentials:write"
+            ]
+          },
+          "expiresInDays": {
+            "type": "number",
+            "example": 90,
+            "description": "Expiración en días (opcional)"
+          }
+        },
+        "required": [
+          "name",
+          "credentialType",
+          "permissions"
+        ]
+      },
+      "RegisterWebhookEndpointDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "https://api.cmorapr.cl/hooks/cmorflow"
+          },
+          "events": {
+            "type": "string",
+            "example": [
+              "dte.accepted",
+              "dte.rejected"
+            ],
+            "enum": [
+              "dte.submitted",
+              "dte.accepted",
+              "dte.observed",
+              "dte.rejected",
+              "dte.failed",
+              "rcof.submitted",
+              "rcof.accepted",
+              "rcof.observed",
+              "rcof.rejected",
+              "rcof.failed"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "Producción CMORAPR"
+          }
+        },
+        "required": [
+          "url",
+          "events"
+        ]
+      }
+    }
+  }
+}

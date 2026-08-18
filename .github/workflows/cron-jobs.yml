@@ -1,0 +1,61 @@
+# Cron jobs para CmorFlow Tax API — disparan el reconciler vía endpoints HMAC.
+# Render Free se duerme; estos jobs garantizan procesamiento determinista.
+#
+# Secrets requeridos en GitHub:
+#   CRON_HMAC_SECRET  — clave compartida para firmar requests
+#   CRON_API_BASE_URL — URL base del backend (ej: https://cmorflow-tax-api.onrender.com)
+name: Cron Jobs
+
+on:
+  schedule:
+    # Reconciler: cola + polling SII + webhooks + purge nonces (cada 5 min)
+    - cron: '*/5 * * * *'
+    # Entregas de webhooks vencidas (cada 2 min)
+    - cron: '*/2 * * * *'
+    # RCOF diario automático (05:00 UTC = 06:00 Santiago)
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-cron:
+    name: ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - job: process-integrations
+            endpoint: /api/v1/internal/cron/process-integrations
+          - job: deliver-webhooks
+            endpoint: /api/v1/internal/cron/deliver-webhooks
+          - job: rcof-daily
+            endpoint: /api/v1/internal/cron/rcof-daily
+
+    steps:
+      - name: Ejecutar ${{ matrix.job }}
+        env:
+          CRON_HMAC_SECRET: ${{ secrets.CRON_HMAC_SECRET }}
+          CRON_API_BASE_URL: ${{ secrets.CRON_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRON_HMAC_SECRET" ] || [ -z "$CRON_API_BASE_URL" ]; then
+            echo "⚠️ Faltan secrets. Skipping."
+            exit 0
+          fi
+          BODY='{"job":"'${{ matrix.job }}'"}'
+          TIMESTAMP=$(date +%s)
+          SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$CRON_HMAC_SECRET" | sed 's/^.* //')
+          echo "→ POST $CRON_API_BASE_URL${{ matrix.endpoint }}"
+          for attempt in 1 2 3; do
+            HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+              -X POST "$CRON_API_BASE_URL${{ matrix.endpoint }}" \
+              -H "Content-Type: application/json" \
+              -H "X-Cron-Timestamp: $TIMESTAMP" \
+              -H "X-Cron-Signature: $SIGNATURE" \
+              -d "$BODY" --max-time 30 || true)
+            echo "  Attempt $attempt: HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then echo "✅ ${{ matrix.job }}"; exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "❌ ${{ matrix.job }} falló"
+          exit 1

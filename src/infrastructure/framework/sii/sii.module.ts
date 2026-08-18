@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { B2BPostgresDataServicesModule } from '../postgres/b2b-postgres-data-services.module';
+import { DataServicesModule } from '../../data-service/data-service.module';
 import { Aes256Cipher } from '../crypto/aes-256-cipher';
 import { TenantConfigEntity } from '../postgres/entities/tenant-config.entity';
 import { SignatureEngine } from './signature.engine';
@@ -15,6 +15,7 @@ import { DteXmlEngine } from './dte-xml.engine';
 import { SiiAuthTokenService } from './sii-auth-token.service';
 import { SiiXsdValidator } from './sii-xsd.validator';
 import { TenantConfigService } from './tenant-config.service';
+import { DiscountEngine } from './discount.engine';
 
 /**
  * SiiModule reducido para la Tax API: sin libros, sin intercambio de
@@ -23,11 +24,12 @@ import { TenantConfigService } from './tenant-config.service';
  */
 @Module({
   imports: [
-    B2BPostgresDataServicesModule,
+    DataServicesModule,
     TypeOrmModule.forFeature([TenantConfigEntity]),
   ],
   providers: [
     Aes256Cipher,
+    DiscountEngine,
     SignatureEngine,
     CAFEngine,
     SiiSoapClient,
@@ -43,6 +45,7 @@ import { TenantConfigService } from './tenant-config.service';
   ],
   exports: [
     Aes256Cipher,
+    DiscountEngine,
     SignatureEngine,
     CAFEngine,
     SiiSoapClient,

@@ -1,5 +1,5 @@
 // src/infrastructure/index.ts
-export * from './framework/postgres/b2b-postgres-data-services.module';
+export * from './data-service/data-service.module';
 export * from './framework/postgres/b2b-postgres-data-services.service';
 export * from './framework/sii/sii.module';
 export * from './guards/integration-hmac.guard';

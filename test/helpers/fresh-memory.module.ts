@@ -1,18 +1,17 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { IDataServices } from '../../src/domain';
 import { FreshMemoryDataServices } from './fresh-memory-data.service';
 
 /**
- * Módulo NestJS de persistencia en memoria para tests de la Tax API.
- * Reemplaza B2BPostgresDataServicesModule para que los tests corran sin BD.
+ * Módulo @Global de persistencia en memoria para tests y drift check.
+ * Al ser global, IDataServices está disponible en todos los módulos sin
+ * necesidad de overridear cada referencia individual.
  */
+@Global()
 @Module({
   providers: [
     FreshMemoryDataServices,
-    {
-      provide: IDataServices,
-      useExisting: FreshMemoryDataServices,
-    },
+    { provide: IDataServices, useExisting: FreshMemoryDataServices },
   ],
   exports: [IDataServices],
 })

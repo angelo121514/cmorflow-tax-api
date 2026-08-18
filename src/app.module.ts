@@ -5,7 +5,7 @@ import { ClsModule } from 'nestjs-cls';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { TerminusModule } from '@nestjs/terminus';
-import { B2BPostgresDataServicesModule } from './infrastructure/framework/postgres/b2b-postgres-data-services.module';
+import { DataServicesModule } from './infrastructure/data-service/data-service.module';
 import { SiiModule } from './infrastructure/framework/sii/sii.module';
 import { DteEmissionModule } from './application/dte/dte-emission.module';
 import { IntegrationsModule } from './application/integrations/integrations.module';
@@ -30,7 +30,7 @@ import { SetTenantContextInterceptor } from './infrastructure/interceptors/set-t
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 120 }]),
     TerminusModule,
     LoggerModule,
-    B2BPostgresDataServicesModule,
+    DataServicesModule,
     SiiModule,
     DteEmissionModule,
     IntegrationsModule,

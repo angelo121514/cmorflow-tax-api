@@ -1,7 +1,7 @@
 // backend/src/application/integrations/integrations.module.ts
 import { Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { B2BPostgresDataServicesModule } from '../../infrastructure/framework/postgres/b2b-postgres-data-services.module';
+import { DataServicesModule } from '../../infrastructure/data-service/data-service.module';
 import { SiiModule } from '../../infrastructure/framework/sii/sii.module';
 import { DteEmissionModule } from '../dte/dte-emission.module';
 import { Aes256Cipher } from '../../infrastructure/framework/crypto/aes-256-cipher';
@@ -22,7 +22,7 @@ import { IntegrationJobPort } from './integration-job.port';
  * webhooks salientes firmados y RCOF persistido/transmitido.
  */
 @Module({
-  imports: [B2BPostgresDataServicesModule, SiiModule, DteEmissionModule],
+  imports: [DataServicesModule, SiiModule, DteEmissionModule],
   providers: [
     Aes256Cipher,
     IntegrationCredentialsUseCase,
