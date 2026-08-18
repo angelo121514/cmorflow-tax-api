@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:element name="CAF">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="DA">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="RE" type="xs:string"/>
+              <xs:element name="RS" type="xs:string"/>
+              <xs:element name="TD" type="xs:integer"/>
+              <xs:element name="RNG">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="D" type="xs:integer"/>
+                    <xs:element name="H" type="xs:integer"/>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="FA" type="xs:string"/>
+              <xs:element name="RSAPK">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="M" type="xs:string"/>
+                    <xs:element name="E" type="xs:string"/>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="IDK" type="xs:integer" minOccurs="0"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="FRMA">
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base="xs:string">
+                <xs:attribute name="algoritmo" type="xs:string" use="required"/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="version" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

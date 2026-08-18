@@ -1,0 +1,169 @@
+{
+  "info": {
+    "name": "CmorFlow B2B — CMORAPR",
+    "description": "Colección de pruebas para la API B2B /api/v1/integrations de CmorFlow.\n\nVariables de entorno requeridas:\n- api_base: https://api.cmorflow.cl/api/v1\n- api_key: cmk_...\n- api_secret: cmc_...\n- tenant_id: (opcional, se resuelve desde la credencial)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "api_base", "value": "https://api.cmorflow.cl/api/v1" },
+    { "key": "api_key", "value": "cmk_REPLACE" },
+    { "key": "api_secret", "value": "cmc_REPLACE" },
+    { "key": "request_id", "value": "" },
+    { "key": "dte_id", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Helper: firma HMAC de la petición B2B.",
+          "const crypto = require('crypto-js');",
+          "const apiKey = pm.environment.get('api_key');",
+          "const secret = pm.environment.get('api_secret');",
+          "if (!apiKey || !secret || apiKey === 'cmk_REPLACE') { return; }",
+          "const signingKey = CryptoJS.SHA256(secret).toString();",
+          "const method = request.method.toUpperCase();",
+          "const url = new URL(request.url.toString());",
+          "const pathWithQuery = url.pathname + (url.search || '');",
+          "const body = request.body ? request.body.toString() : '';",
+          "const bodyHash = CryptoJS.SHA256(body).toString();",
+          "const timestamp = Math.floor(Date.now() / 1000).toString();",
+          "const nonce = crypto.lib.WordArray.random(16).toString();",
+          "const canonical = [method, pathWithQuery, bodyHash, timestamp, nonce].join('\\n');",
+          "const signature = CryptoJS.HmacSHA256(canonical, signingKey).toString();",
+          "pm.request.headers.upsert({ key: 'X-Api-Key', value: apiKey });",
+          "pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
+          "pm.request.headers.upsert({ key: 'X-Nonce', value: nonce });",
+          "pm.request.headers.upsert({ key: 'X-Signature', value: signature });",
+          "if (request.method === 'POST' && !pm.request.headers.has('Idempotency-Key')) {",
+          "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: crypto.lib.WordArray.random(16).toString() });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Emitir boleta afecta (39)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{api_base}}/integrations/dte",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"documentType\": 39,\n  \"items\": [\n    { \"name\": \"Consumo de agua - Julio 2026\", \"quantity\": 1, \"unitPrice\": 45000 }\n  ],\n  \"externalReference\": \"APR-CONSUMO-88021\",\n  \"metadata\": { \"periodoApr\": \"2026-07\", \"numeroCuenta\": \"CTA-88021\" }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('202 accepted', () => pm.response.to.have.status(202));",
+              "const json = pm.response.json();",
+              "pm.environment.set('request_id', json.requestId);",
+              "console.log('requestId=', json.requestId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consultar estado por requestId",
+      "request": {
+        "method": "GET",
+        "url": "{{api_base}}/integrations/dte/{{request_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (json.dte && json.dte.dteId) { pm.environment.set('dte_id', json.dte.dteId); }",
+              "console.log('status=', json.status, 'folio=', json.dte && json.dte.folio);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reconciliar por externalReference",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{api_base}}/integrations/dte?externalReference=APR-CONSUMO-88021", "host": ["{{api_base}}"], "path": ["integrations", "dte"], "query": [{ "key": "externalReference", "value": "APR-CONSUMO-88021" }] }
+      }
+    },
+    {
+      "name": "Descargar XML",
+      "request": { "method": "GET", "url": "{{api_base}}/integrations/dte/{{dte_id}}/xml" }
+    },
+    {
+      "name": "Descargar PDF",
+      "request": { "method": "GET", "url": "{{api_base}}/integrations/dte/{{dte_id}}/pdf" }
+    },
+    {
+      "name": "Generar URL firmada de artefactos",
+      "request": { "method": "POST", "url": "{{api_base}}/integrations/dte/{{dte_id}}/artifact-links" }
+    },
+    {
+      "name": "Emitir nota de crédito (61)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{api_base}}/integrations/dte/{{dte_id}}/credit-notes",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reasonCode\": 1,\n  \"reason\": \"Anula documento por error de emisión\",\n  \"items\": [\n    { \"name\": \"Anulación consumo 88021\", \"quantity\": 1, \"unitPrice\": 0 }\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Solicitar RCOF del día",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{api_base}}/integrations/rcof",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"date\": \"2026-08-14\",\n  \"sequenceNumber\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Consultar RCOF",
+      "request": { "method": "GET", "url": "{{api_base}}/integrations/rcof/{{request_id}}" }
+    },
+    {
+      "name": "Idempotencia: replay (misma key + mismo body)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{api_base}}/integrations/dte",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"documentType\": 39,\n  \"items\": [\n    { \"name\": \"Consumo de agua - Julio 2026\", \"quantity\": 1, \"unitPrice\": 45000 }\n  ],\n  \"externalReference\": \"APR-CONSUMO-88021\",\n  \"metadata\": { \"periodoApr\": \"2026-07\", \"numeroCuenta\": \"CTA-88021\" }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Forzar el mismo Idempotency-Key del primer request para validar replay.",
+              "pm.test('devuelve la misma respuesta (replay)', () => {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.requestId).to.eql(pm.environment.get('request_id'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

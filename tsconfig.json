@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@domain/*": ["src/domain/*"],
+      "@domain": ["src/domain/index"],
+      "@application/*": ["src/application/*"],
+      "@application": ["src/application/index"],
+      "@infrastructure/*": ["src/infrastructure/*"],
+      "@infrastructure": ["src/infrastructure/index"],
+      "@controllers/*": ["src/controllers/*"],
+      "@controllers": ["src/controllers/index"]
+    }
+  }
+}
