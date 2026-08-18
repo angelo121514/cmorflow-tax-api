@@ -27,5 +27,6 @@
       "@controllers/*": ["src/controllers/*"],
       "@controllers": ["src/controllers/index"]
     }
-  }
+  },
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "**/*.e2e-spec.ts", "scripts"]
 }
