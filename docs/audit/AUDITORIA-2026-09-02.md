@@ -248,3 +248,27 @@ Plan §7 ejecutado casi por completo. Cambios verificados con **93/93 unit + 9/9
 - **M-3** (throttler multi-instancia): sin Redis en el stack; con 1 instancia y `trust proxy` el bucket por IP ya es correcto. Pendiente si se escala a N instancias.
 - **Item 5 del plan** (worker/schedule en Render): el worker está definido en `render.yaml`; su creación es el paso de Blueprint en el dashboard (el servicio legacy node no puede migrarse de runtime in-place).
 - **B-1** (URL de artefactos con secreto por tenant + revocación): diseño nuevo, quedó documentado como mejora futura.
+
+---
+
+## 10. Despliegue en producción (fase 3 — 2026-09-02, mismo día)
+
+**Resultado: la API quedó desplegada y VIVA en producción por primera vez** (deploy `dep-dacabn15efls73dmbdfg`, estado `live`):
+- `GET https://cmorflow-tax-api.onrender.com/api/v1/health` → **200 `{"status":"ok"}`**
+- `GET https://cmorflow-tax-api.onrender.com/api/v1/ready` → **200** con `postgres: ok`, `integrationsEnabled: ok`, `masterKey: ok`
+
+Durante el diagnóstico se resolvieron, en orden, estos bloqueantes (cada uno confirmado con logs de Render):
+
+1. **Build + DI**: el código remediado compila y arranca (el error DI del P0 desapareció al aplicar §3.1).
+2. **Secretos de producción ausentes** (fail-closed correcto): se generaron y cargaron en el servicio `SII_MASTER_KEY`, `INTEGRATION_URL_SECRET`, `METRICS_BEARER_TOKEN` + `METRICS_ENABLED`, `CRON_HMAC_SECRET`, `SII_INTEGRATION_MODE=real`, `SII_ENVIRONMENT=certification`, `SII_XSD_VALIDATION_ENABLED=true`.
+3. **TLS con Supabase**: `self-signed certificate in certificate chain` → se extrajo el root CA `Supabase Root 2021 CA` (fingerprint en `certs/README.md`) desde la propia cadena TLS de la BD y se configuró `NODE_EXTRA_CA_CERTS=/opt/render/project/src/certs/supabase-root-ca.crt`. La verificación TLS se mantiene activa (no se desactivó `rejectUnauthorized`).
+4. **`DB_USER` mal escrito**: era `cmorflow_app.wirwadxtrblslfwayple` (ref incorrecto); el pooler de Supabase reportaba `tenant/user not found`.
+5. **Password de `cmorflow_app` desconocido**: se rotó el password del rol y se usó ese rol para la API (`pg_stat_activity` mostró cero conexiones activas con ese rol en ese momento).
+6. **Migraciones**: `AUTO_RUN_MIGRATIONS=true` chocaba con permisos del rol no-owner y RLS sobre `typeorm_migrations` (herencia del ERP). Las 4 migraciones pendientes se aplicaron manualmente como superusuario (columna `secret_encrypted`, tabla `cron_nonces`, policies con `worker_scope` en las 5 tablas B2B) y se registraron en `typeorm_migrations`; `AUTO_RUN_MIGRATIONS=false` en el servicio.
+
+### ⚠️ Acciones de seguimiento para el dueño
+
+1. **Password de `cmorflow_app` rotado**: los servicios legacy del ERP (`sii-ohbs`, `cmorflow-backend-staging`) usan ese rol. Si alguno despierta y falla autenticación, hay que actualizar su `DB_PASSWORD` al nuevo valor (visible en el dashboard de Render, servicio `cmorflow-tax-api` → Environment).
+2. **El rol `tax_api_app`** quedó creado con grants completos pero el pooler de Supabase no lo registró (los roles nuevos requieren reprovisionar el pooler en el dashboard). Puede eliminarse o usarse tras reprovisionar.
+3. **Worker persistente y crons siguen pendientes**: sin el servicio worker de Render, la cola solo se procesa vía el kick post-202 y los crons manuales (`workflow_dispatch`). El paso de Blueprint (dashboard → New → Blueprint) crea web + worker con el grupo de secretos.
+4. **Guardar los secretos**: los valores generados hoy viven solo en el Environment del servicio en Render; respaldarlos en un gestor de secretos.
