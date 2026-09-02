@@ -33,6 +33,15 @@ export class EngineTableRls1805200000000 implements MigrationInterface {
     if (!exists.length) return;
 
     if (up) {
+      // No interferir con RLS ya gestionado por otra línea de migraciones
+      // (p. ej. el ERP comparte esta BD y ya aplica sus propias policies con
+      // FORCE en estas tablas): añadir policies adicionales sería redundante
+      // y podría relajar el aislamiento vigente.
+      const alreadyRls = await queryRunner.query(
+        `SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = $1 AND rowsecurity`,
+        [table],
+      );
+      if (alreadyRls.length) return;
       await queryRunner.query(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`);
       await queryRunner.query(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`);
       await queryRunner.query(`DROP POLICY IF EXISTS "tenant_isolation_${table}" ON "${table}"`);
@@ -47,8 +56,15 @@ export class EngineTableRls1805200000000 implements MigrationInterface {
         )`);
     } else {
       await queryRunner.query(`DROP POLICY IF EXISTS "tenant_isolation_${table}" ON "${table}"`);
-      await queryRunner.query(`ALTER TABLE "${table}" NO FORCE ROW LEVEL SECURITY`);
-      await queryRunner.query(`ALTER TABLE "${table}" DISABLE ROW LEVEL SECURITY`);
+      // El down no desactiva RLS si otra línea de migraciones la activó antes.
+      const oursOnly = await queryRunner.query(
+        `SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = $1 AND rowsecurity`,
+        [table],
+      );
+      if (oursOnly.length) {
+        await queryRunner.query(`ALTER TABLE "${table}" NO FORCE ROW LEVEL SECURITY`);
+        await queryRunner.query(`ALTER TABLE "${table}" DISABLE ROW LEVEL SECURITY`);
+      }
     }
   }
 
