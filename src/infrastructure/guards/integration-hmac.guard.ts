@@ -14,12 +14,14 @@ import { IntegrationApiException } from '../../application/integrations/integrat
 import { IntegrationErrorCode } from '../../application/integrations/integration-errors';
 import { INTEGRATION_PERMISSIONS_KEY } from '../decorators/integration-permission.decorator';
 import { IntegrationSignatureUtil } from '../framework/integrations/integration-signature.util';
+import { Aes256Cipher } from '../framework/crypto/aes-256-cipher';
+import { DEFAULT_SII_MASTER_KEY } from '../framework/sii/sii-defaults.constant';
 
 /**
  * Guard HMAC de la API B2B /integrations.
  *
  * Encabezados exigidos:
- * - X-Api-Key: keyId público de la credencial (cmk_…).
+ * - X-Api-Key: keyId público de la credencial (cmor_live_…).
  * - X-Timestamp: epoch en segundos (ventana ±300s por defecto).
  * - X-Nonce: valor único por credencial dentro de la ventana (antireplay).
  * - X-Signature: HMAC-SHA256 hex del string canónico
@@ -43,7 +45,29 @@ export class IntegrationHmacGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly dataServices: IDataServices,
     private readonly cls: ClsService,
+    private readonly aesCipher: Aes256Cipher,
   ) {}
+
+  /**
+   * Clave de firma HMAC. Credenciales nuevas: secreto cifrado con
+   * SII_MASTER_KEY → se descifra y se hashea (un dump de BD no sirve para
+   * firmar). Credenciales previas a la migración (sólo secretHash): path
+   * legacy hasta su rotación.
+   */
+  private resolveSigningKey(credential: { secretHash: string; secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null }): string {
+    if (credential.secretEncrypted) {
+      const masterKey = process.env.SII_MASTER_KEY || DEFAULT_SII_MASTER_KEY;
+      const secret = this.aesCipher.decrypt(
+        credential.secretEncrypted.ciphertext,
+        masterKey,
+        credential.secretEncrypted.iv,
+        credential.secretEncrypted.authTag,
+        credential.secretEncrypted.salt,
+      );
+      return IntegrationSignatureUtil.hashSecret(secret);
+    }
+    return credential.secretHash;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (process.env.INTEGRATIONS_API_ENABLED !== 'true') {
@@ -118,7 +142,7 @@ export class IntegrationHmacGuard implements CanActivate {
       timestamp,
       nonce,
     );
-    const expected = IntegrationSignatureUtil.sign(credential.secretHash, canonical);
+    const expected = IntegrationSignatureUtil.sign(this.resolveSigningKey(credential), canonical);
     if (!IntegrationSignatureUtil.safeEquals(signature, expected)) {
       throw new IntegrationApiException(
         IntegrationErrorCode.INVALID_SIGNATURE,
@@ -165,12 +189,14 @@ export class IntegrationHmacGuard implements CanActivate {
     this.cls.set('credentialId', credential.id);
     request.integrationCredential = credential;
 
-    // 8. Correlation ID: acepta X-Request-ID del cliente o genera uno nuevo
-    //    (formato req_ + ULID-like). Se propaga a logs, auditoría y webhooks
-    //    para trazabilidad punta a punta.
-    const clientRequestId = request.headers['x-request-id'] as string | undefined;
-    const correlationId = clientRequestId?.trim()
-      ? clientRequestId.trim()
+    // 8. Correlation ID: acepta X-Request-ID del cliente (validado) o genera
+    //    uno nuevo (formato req_ + ULID-like). Se propaga a logs, auditoría y
+    //    webhooks para trazabilidad punta a punta. Sin validación, un header
+    //    arbitrario terminaría inyectado en logs y auditoría.
+    const clientRequestId = (request.headers['x-request-id'] as string | undefined)?.trim();
+    const clientRequestIdValid = clientRequestId && /^[\w.\-]{1,64}$/.test(clientRequestId) ? clientRequestId : undefined;
+    const correlationId = clientRequestIdValid
+      ? clientRequestIdValid
       : 'req_' + Date.now().toString(36) + randomBytes(8).toString('hex');
     request.headers['x-request-id'] = correlationId;
     this.cls.set('correlationId', correlationId);

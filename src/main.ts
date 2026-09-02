@@ -8,10 +8,14 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger as WinstonLogger } from 'winston';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
+import { validateRuntimeConfig } from './infrastructure/config/runtime-config';
 
 async function bootstrap() {
+  validateRuntimeConfig();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
+    bodyParser: false,
   });
 
   const winstonLogger = app.get(WINSTON_MODULE_PROVIDER);
@@ -23,7 +27,15 @@ async function bootstrap() {
     verbose: (message: string, context?: string) => winstonLogger.verbose(message, { context: context || 'App' }),
   });
 
-  app.use(helmet({ contentSecurityPolicy: false }));
+  const bodyLimit = process.env.HTTP_BODY_LIMIT || '1mb';
+  app.use(json({ limit: bodyLimit, verify: (req: any, _res, buffer) => { req.rawBody = buffer; } }));
+  app.use(urlencoded({ limit: bodyLimit, extended: false }));
+  // Render termina TLS en 1 hop: sin esto, req.ip es la IP del proxy y el
+  // Throttler global colapsa en un único bucket para todos los clientes.
+  app.set('trust proxy', 1);
+  const docsEnabled = process.env.API_DOCS_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
+  // CSP se desactiva sólo cuando se sirve Swagger UI (requiere inline scripts).
+  app.use(helmet(docsEnabled ? { contentSecurityPolicy: false } : {}));
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalFilters(new GlobalExceptionFilter());
@@ -33,8 +45,11 @@ async function bootstrap() {
     : [];
   app.enableCors({
     origin: (origin, callback) => {
+      // Sin Origin (B2B server-to-server) u origen permitido → con headers CORS.
+      // Origen desconocido → respuesta SIN headers CORS (el navegador la bloquea),
+      // en vez de un 500 que ensucia logs y métricas.
       if (!origin || corsOrigins.includes(origin)) callback(null, true);
-      else callback(new Error(`CORS no permitido para el origen: ${origin}`));
+      else callback(null, false);
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   });
@@ -67,16 +82,6 @@ async function bootstrap() {
     .addTag('health', 'Health checks')
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-    customSiteTitle: 'CmorFlow Tax API — Docs',
-  });
-
-  await app.listen(port);
-  winstonLogger.info(`CmorFlow Tax API iniciada en http://localhost:${port}/api/v1`, { context: 'Bootstrap' });
-  winstonLogger.info(`Swagger: http://localhost:${port}/api/docs`, { context: 'Bootstrap' });
-
   if (process.env.AUTO_RUN_MIGRATIONS === 'true') {
     try {
       const dataSource = app.get('DataSource');
@@ -88,7 +93,25 @@ async function bootstrap() {
       }
     } catch (migErr) {
       winstonLogger.error(`Error en migraciones: ${(migErr as Error).message}`, { context: 'Bootstrap' });
+      await app.close();
+      throw migErr;
     }
   }
+
+  if (docsEnabled) {
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: { persistAuthorization: process.env.NODE_ENV !== 'production' },
+      customSiteTitle: 'CmorFlow Tax API — Docs',
+    });
+  }
+
+  await app.listen(port);
+  winstonLogger.info(`CmorFlow Tax API iniciada en http://localhost:${port}/api/v1`, { context: 'Bootstrap' });
+  if (docsEnabled) winstonLogger.info(`Swagger: http://localhost:${port}/api/docs`, { context: 'Bootstrap' });
 }
-bootstrap();
+bootstrap().catch((error) => {
+  // Fail closed: an invalid configuration or migration must never accept traffic.
+  console.error(`No se pudo iniciar CmorFlow Tax API: ${(error as Error).message}`);
+  process.exit(1);
+});

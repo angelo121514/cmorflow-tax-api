@@ -41,6 +41,9 @@ describe('IntegrationWebhookService — eventos y entregas firmadas', () => {
     await expect(
       service.registerEndpoint(tenantId, { url: 'https://x.cl', events: ['evento.inexistente'] }),
     ).rejects.toThrow(/inválidos/);
+    await expect(
+      service.registerEndpoint(tenantId, { url: 'https://127.0.0.1/admin', events: ['dte.accepted'] }),
+    ).rejects.toThrow(/privada o local/);
 
     const { endpoint, secret } = await service.registerEndpoint(tenantId, {
       url: 'https://hooks.cliente.cl/cb',

@@ -23,7 +23,7 @@ Un servicio NestJS autónomo que expone el motor tributario de CmorFlow (emisió
 - **SiiModule** sin `forwardRef` (`Aes256Cipher` movido a `infrastructure/framework/crypto/`)
 - **DteEmissionModule** con sólo `EmitDteUseCase` + `QueryDteStatusUseCase`
 - **AppModule** sin JWT/SecurityModule/billing/compliance/AI/BullMQ/accounting/RRHH
-- **IntegrationJobPort** — abstracción del worker (cron hoy, BullMQ/pg-boss mañana)
+- **Worker persistente** separado del proceso HTTP, con reclamo atómico y reintentos seguros
 - **State machine** de DTE con `ALLOWED_TRANSITIONS`
 
 ## Seguridad
@@ -39,7 +39,7 @@ Un servicio NestJS autónomo que expone el motor tributario de CmorFlow (emisió
 ## Flujo asíncrono
 
 1. `POST /api/v1/dtes` → valida, recalcula totales, persiste solicitud en `queued`, responde **202** con `requestId`
-2. **Reconciler** (cron cada 5 min vía GitHub Actions) reclama con `FOR UPDATE SKIP LOCKED`
+2. **Worker persistente** reclama con `FOR UPDATE SKIP LOCKED`; GitHub Actions queda sólo como respaldo manual
 3. `EmitDteUseCase.prepare` reserva folio **una sola vez** (persiste `dteId` antes de transmitir)
 4. `EmitDteUseCase.transmit` firma el sobre y envía al SII → estado `submitted`
 5. **Polling** del estado SII → `accepted` | `observed` | `rejected`
@@ -62,6 +62,9 @@ POST   /api/v1/dtes/:id/credit-notes   → nota crédito
 POST   /api/v1/dtes/:id/debit-notes    → nota débito
 POST   /api/v1/rcof                    → RCOF
 GET    /api/v1/rcof/:id               → estado RCOF
+POST   /api/v1/configuration/caf      → cargar CAF cifrado (admin)
+POST   /api/v1/configuration/signature → cargar certificado PFX cifrado (admin)
+GET    /api/v1/configuration/folios   → consultar disponibilidad (admin)
 POST   /api/v1/credentials             → crear (admin)
 POST   /api/v1/credentials/:id/rotate  → rotar (admin)
 POST   /api/v1/webhooks               → registrar (admin)
@@ -79,14 +82,17 @@ Ver `.env.example` para todas las variables. Las críticas:
 | `SII_MASTER_KEY` | Clave AES-256 para cifrar firmas PFX, CAFs y secretos de webhook |
 | `INTEGRATIONS_API_ENABLED` | Feature flag (true en staging, false en producción hasta gate tributario) |
 | `SII_INTEGRATION_MODE` | `mock` (desarrollo) o `real` (SII de certificación/producción) |
-| `AUTO_RUN_MIGRATIONS` | `true` en staging, `false` en producción (usar `preDeployCommand`) |
+| `INTEGRATION_URL_SECRET` | Secreto de al menos 32 caracteres para enlaces firmados |
+| `METRICS_BEARER_TOKEN` | Token de al menos 32 caracteres para `/api/v1/metrics` en producción |
+| `AUTO_RUN_MIGRATIONS` | Sólo desarrollo; producción usa `preDeployCommand` y aborta si falla |
 
 ## Desarrollo
 
 ```bash
 npm install
 npm run build
-npm test          # 81 specs
+npm test
+npm run test:e2e
 npm run start:dev # http://localhost:3000/api/docs
 ```
 
@@ -98,11 +104,19 @@ La migración `1805000000000-AddIntegrationsApi` crea las 7 tablas B2B. Depende 
 npm run migration:run
 ```
 
+Para crear la primera credencial administrativa de un tenant existente:
+
+```bash
+npm run admin:bootstrap -- <TENANT_UUID> "Administrador inicial"
+```
+
+El secreto se muestra una sola vez. Después se usa para firmar las solicitudes HMAC descritas en la guía de integración.
+
 ## Roadmap
 
 - **Fase 6** ✅: OpenAPI drift check propio, `render.yaml`, CI/cron workflows, rutas limpias (`/dtes`, `/rcof`, `/credentials`, `/webhooks`)
-- **Deploy** ✅: Pusheado a GitHub (`https://github.com/angelo121514/cmorflow-tax-api`, público) + servicio Render free (`https://cmorflow-tax-api.onrender.com`)
-- **Pendiente**: configurar `DB_PASSWORD` y `SII_MASTER_KEY` reales en Render Dashboard → Environment
+- **Infraestructura**: Blueprint Docker con web y worker persistente; migraciones antes de recibir tráfico
+- **Pendiente externo**: desplegar secretos reales y completar formalmente la certificación del SII
 - **Fase 7**: El ERP deja de emitir DTE directamente y consume la Tax API por HTTP. Se elimina el código B2B duplicado del ERP.
 - **Futuro**: Separación física de esquema `tax` en Postgres (regla: una tabla = un dueño)
 
@@ -113,14 +127,9 @@ npm run migration:run
 
 ## Deploy en Render
 
-El servicio `cmorflow-tax-api` (plan free) está creado en Render. Detalles importantes del build:
+`render.yaml` define dos servicios Docker: `cmorflow-tax-api` (HTTP) y `cmorflow-tax-worker` (procesamiento). Ambos usan el mismo grupo secreto. El web ejecuta `node start-migrate.js` como pre-deploy; si la configuración o una migración falla, no abre el puerto. El contenedor incluye `libxml2-utils` para validar XSD.
 
-- **Build**: `npm ci && npm run build` — el script `build` usa `tsc` directo (no `@nestjs/cli`, que no se instala con `NODE_ENV=production`)
-- **Types en dependencies**: `typescript`, `@types/node-forge`, `@types/pdfkit`, `@types/supertest`, `tsconfig-paths`, `ts-node` están en `dependencies` (no devDependencies) porque `npm ci` en prod omite devDeps
-- **rootDir=src**: el JS compilado queda en `dist/main.js` (no `dist/src/main.js`)
-- **start-prod.js**: registra `tsconfig-paths` con `baseUrl=dist` para resolver los paths `@domain/@application/etc.` en runtime
-- **`AUTO_RUN_MIGRATIONS=true`** en el servicio: al arrancar corre la migración `1805000000000` (crea las 7 tablas B2B)
-- **Secrets pendientes**: `DB_PASSWORD` y `SII_MASTER_KEY` deben configurarse en el Dashboard (no se pueden poner por API)
+En una instalación nueva se deben crear primero las tablas base compartidas del ERP indicadas en la sección Migraciones. Si el servicio existente en Render no usa Docker, el cambio de runtime requiere recrearlo desde el Blueprint.
 
 ## Origen
 

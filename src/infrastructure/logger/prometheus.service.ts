@@ -38,6 +38,8 @@ export class PrometheusService implements OnModuleInit {
   readonly integrationQueueDepth: Gauge<string>;
   readonly webhookDeliveriesTotal: Counter<string>;
   readonly folioStockGauge: Gauge<string>;
+  readonly integrationRetriesTotal: Counter<string>;
+  readonly certificateExpiryDays: Gauge<string>;
 
   constructor() {
     this.registry = new Registry();
@@ -126,6 +128,20 @@ export class PrometheusService implements OnModuleInit {
       name: 'folio_stock',
       help: 'Folios disponibles por tipo y tenant (salud de folios)',
       labelNames: ['tenant_id', 'document_type', 'health'],
+      registers: [this.registry],
+    });
+
+    this.integrationRetriesTotal = new Counter({
+      name: 'integration_retries_total',
+      help: 'Reintentos de procesamiento de solicitudes B2B',
+      labelNames: ['kind', 'error_code'],
+      registers: [this.registry],
+    });
+
+    this.certificateExpiryDays = new Gauge({
+      name: 'sii_certificate_expiry_days',
+      help: 'Días restantes antes del vencimiento del certificado SII por tenant',
+      labelNames: ['tenant_id'],
       registers: [this.registry],
     });
   }

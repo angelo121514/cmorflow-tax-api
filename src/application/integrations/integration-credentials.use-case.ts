@@ -3,6 +3,8 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { firstValueFrom } from 'rxjs';
 import { IDataServices, AuditLogEntity } from '@domain';
 import { IntegrationSignatureUtil } from '../../infrastructure/framework/integrations/integration-signature.util';
+import { Aes256Cipher } from '../../infrastructure/framework/crypto/aes-256-cipher';
+import { DEFAULT_SII_MASTER_KEY } from '../../infrastructure/framework/sii/sii-defaults.constant';
 import {
   INTEGRATION_PERMISSIONS,
   IntegrationPermissionValue,
@@ -52,7 +54,20 @@ export interface CreateCredentialResult {
 export class IntegrationCredentialsUseCase {
   private readonly logger = new Logger(IntegrationCredentialsUseCase.name);
 
-  constructor(private readonly dataServices: IDataServices) {}
+  constructor(
+    private readonly dataServices: IDataServices,
+    private readonly aesCipher: Aes256Cipher,
+  ) {}
+
+  /**
+   * El secreto se guarda cifrado (AES-256-GCM con SII_MASTER_KEY) además de su
+   * hash: el guard firma con el secreto descifrado, así un dump de BD no
+   * contiene una clave HMAC usable (el secretHash queda sólo para legado).
+   */
+  private encryptSecret(secret: string): { iv: string; ciphertext: string; authTag: string; salt?: string } {
+    const masterKey = process.env.SII_MASTER_KEY || DEFAULT_SII_MASTER_KEY;
+    return this.aesCipher.encrypt(secret, masterKey);
+  }
 
   async create(tenantId: string, input: CreateCredentialInput): Promise<CreateCredentialResult> {
     if (!input.name?.trim()) {
@@ -90,6 +105,7 @@ export class IntegrationCredentialsUseCase {
         tenantId,
         keyId,
         secretHash,
+        secretEncrypted: this.encryptSecret(secret),
         secretLast4: secret.slice(-4),
         name: input.name.trim(),
         credentialType,

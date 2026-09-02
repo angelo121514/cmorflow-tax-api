@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { IDataServices } from '../../../domain';
 import { B2BPostgresDataServices } from './b2b-postgres-data-services.service';
+import { CronNonceStore } from './cron-nonce.store';
 import {
   IntegrationCredentialEntity,
   IntegrationNonceEntity,
@@ -16,6 +17,7 @@ import {
   SiiSubmissionEntity,
   TenantEntity,
   AuditLogEntity,
+  TenantConfigEntity,
 } from './entities';
 
 const databaseEntities = [
@@ -30,6 +32,7 @@ const databaseEntities = [
   SiiSubmissionEntity,
   TenantEntity,
   AuditLogEntity,
+  TenantConfigEntity,
 ];
 
 @Module({
@@ -56,7 +59,9 @@ const databaseEntities = [
           migrationsRun: false,
           migrations: [__dirname + '/../../../database/migrations/*.{ts,js}'],
           migrationsTableName: 'typeorm_migrations',
-          ssl: isLocalDb ? false : { rejectUnauthorized: false },
+          ssl: isLocalDb || configService.get<string>('DB_SSL', 'true') !== 'true'
+            ? false
+            : { rejectUnauthorized: configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED', 'true') !== 'false' },
           logging: !isProduction ? ['error', 'warn', 'migration'] : ['error'],
         };
       },
@@ -64,7 +69,10 @@ const databaseEntities = [
   ],
   providers: [
     { provide: IDataServices, useClass: B2BPostgresDataServices },
+    // Nonces anti-replay del cron: necesita el DataSource de forRootAsync,
+    // que sólo es visible dentro de este módulo.
+    CronNonceStore,
   ],
-  exports: [IDataServices],
+  exports: [IDataServices, CronNonceStore],
 })
 export class B2BPostgresDataServicesModule {}

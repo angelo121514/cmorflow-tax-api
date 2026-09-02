@@ -16,13 +16,15 @@ import { IntegrationOrchestratorService } from './integration-orchestrator.servi
 import { GenerateRcofUseCase } from './generate-rcof.use-case';
 import { IntegrationHmacGuard } from '../../infrastructure/guards/integration-hmac.guard';
 import { IntegrationJobPort } from './integration-job.port';
+import { IntegrationWorkerService } from './integration-worker.service';
+import { LoggerModule } from '../../infrastructure/logger/logger.module';
 
 /**
  * API B2B /integrations: credenciales HMAC, cola asíncrona sobre Postgres,
  * webhooks salientes firmados y RCOF persistido/transmitido.
  */
 @Module({
-  imports: [DataServicesModule, SiiModule, DteEmissionModule],
+  imports: [DataServicesModule, SiiModule, DteEmissionModule, LoggerModule],
   providers: [
     Aes256Cipher,
     IntegrationCredentialsUseCase,
@@ -35,6 +37,7 @@ import { IntegrationJobPort } from './integration-job.port';
     IntegrationOrchestratorService,
     GenerateRcofUseCase,
     IntegrationHmacGuard,
+    IntegrationWorkerService,
     {
       // Las transiciones de estado disparan webhooks sin dependencia circular.
       provide: INTEGRATION_EVENT_DISPATCHER,
@@ -59,6 +62,4 @@ import { IntegrationJobPort } from './integration-job.port';
   ],
 })
 export class IntegrationsModule {}
-
-
 

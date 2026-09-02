@@ -1,9 +1,11 @@
 // src/controllers/health.controller.ts
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../infrastructure/decorators/public.decorator';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { Response } from 'express';
+import { DEFAULT_SII_MASTER_KEY } from '../infrastructure/framework/sii/sii-defaults.constant';
 
 @ApiTags('health')
 @Controller()
@@ -23,7 +25,7 @@ export class HealthController {
   @Get('ready')
   @Public()
   @ApiOperation({ summary: 'Listo para tráfico (readiness): Postgres + config + crypto' })
-  async ready() {
+  async ready(@Res({ passthrough: true }) response: Response) {
     const checks: Record<string, string> = {};
 
     // Postgres
@@ -36,9 +38,11 @@ export class HealthController {
 
     // Config obligatoria
     checks.integrationsEnabled = this.configService.get('INTEGRATIONS_API_ENABLED') === 'true' ? 'ok' : 'disabled';
-    checks.masterKey = this.configService.get('SII_MASTER_KEY') ? 'ok' : 'missing';
+    const key = this.configService.get<string>('SII_MASTER_KEY');
+    checks.masterKey = key && key !== DEFAULT_SII_MASTER_KEY && key.length >= 32 ? 'ok' : 'missing_or_unsafe';
 
     const allOk = Object.values(checks).every((v) => v === 'ok' || v === 'disabled');
+    if (!allOk) response.status(HttpStatus.SERVICE_UNAVAILABLE);
     return {
       status: allOk ? 'ready' : 'not_ready',
       checks,

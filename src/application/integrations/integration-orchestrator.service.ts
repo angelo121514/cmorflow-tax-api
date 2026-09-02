@@ -8,6 +8,7 @@ import { IntegrationProcessorService } from './integration-processor.service';
 import { IntegrationWebhookService } from './integration-webhook.service';
 import { GenerateRcofUseCase } from './generate-rcof.use-case';
 import { IntegrationJobPort } from './integration-job.port';
+import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
 
 /**
  * Orquestador del reconciler: un tick procesa la cola vencida, consulta el
@@ -26,6 +27,7 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
     private readonly processor: IntegrationProcessorService,
     private readonly webhookService: IntegrationWebhookService,
     private readonly generateRcofUseCase: GenerateRcofUseCase,
+    private readonly metrics: PrometheusService,
   ) {}
 
   /** Tick completo del reconciler (cron cada 5 min). */
@@ -35,7 +37,22 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
     const rcofPoll = await this.processor.pollRcofSubmitted();
     const deliveries = await this.webhookService.deliverDue();
     const purged = await this.purgeNonces();
+    await this.refreshQueueMetrics();
     return { processed, dtePoll, rcofPoll, deliveries, purgedNonces: purged };
+  }
+
+  private async refreshQueueMetrics(): Promise<void> {
+    try {
+      const rows = await this.dataSource.transaction(async (manager) => {
+        await manager.query(`SELECT set_config('app.worker_scope', 'true', true)`);
+        return manager.query(`SELECT state, count(*)::int AS count FROM integration_requests GROUP BY state`);
+      });
+      this.metrics.integrationQueueDepth.reset();
+      for (const row of rows) this.metrics.integrationQueueDepth.set({ state: row.state }, row.count);
+    } catch (error) {
+      // La observabilidad no debe interrumpir el procesamiento tributario.
+      this.logger.warn(`No se pudo actualizar la métrica de cola: ${(error as Error).message}`);
+    }
   }
 
   /** Sólo entregas de webhooks (cron más frecuente si se desea). */
@@ -48,7 +65,9 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
       const result = await this.dataSource.query(
         `DELETE FROM integration_nonces WHERE expires_at < now()`,
       );
-      return result?.length ?? 0;
+      // TypeORM/pg retorna DELETE como [rows, affectedCount].
+      if (Array.isArray(result) && typeof result[1] === 'number') return result[1];
+      return Array.isArray(result) ? result.length : 0;
     } catch (err) {
       // En tests (stub) o si la tabla no existe aún: ignorar silenciosamente.
       return 0;

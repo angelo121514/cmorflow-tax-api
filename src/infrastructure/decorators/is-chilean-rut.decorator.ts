@@ -41,7 +41,9 @@ export function IsChileanRut(validationOptions?: ValidationOptions) {
       target: object.constructor,
       propertyName: propertyName,
       options: {
-        message: `${propertyName} debe ser un RUT chileno válido (ej. 12345678-9 o 12.345.678-K)`,
+        // Ejemplos verificados con módulo 11 (DV correcto): no usar RUTs
+        // inventados inválidos, confunden a quien copia el ejemplo.
+        message: `${propertyName} debe ser un RUT chileno válido (ej. 12.345.678-5 o 76.123.456-0)`,
         ...validationOptions,
       },
       validator: {

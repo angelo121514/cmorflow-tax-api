@@ -30,10 +30,22 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
     }
   }
 
+  /** Runs tenant-scoped work on one transactional connection so SET LOCAL
+   * and PostgreSQL RLS apply to the exact queries that follow. */
+  private async execute<R>(operation: (repository: Repository<any>) => Promise<R>): Promise<R> {
+    this.assertTenantContext();
+    if (!this.isTenantScoped) return operation(this.repository);
+    const tenantId = this.tenantId!;
+    return this.repository.manager.transaction(async (manager) => {
+      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      return operation(manager.getRepository(this.repository.target));
+    });
+  }
+
   getAll(): Observable<T[]> {
     this.assertTenantContext();
     const whereClause = this.isTenantScoped ? { tenantId: this.tenantId } : {};
-    return from(this.repository.find({ where: whereClause }) as Promise<T[]>);
+    return from(this.execute((repository) => repository.find({ where: whereClause }) as Promise<T[]>));
   }
 
   get(id: string): Observable<T | null> {
@@ -41,7 +53,7 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
     const whereClause: any = { id };
     if (this.isTenantScoped) whereClause.tenantId = this.tenantId;
 
-    return from(this.repository.findOne({ where: whereClause }) as Promise<T | null>);
+    return from(this.execute((repository) => repository.findOne({ where: whereClause }) as Promise<T | null>));
   }
 
   getById(id: string): Observable<T | null> {
@@ -52,25 +64,25 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
     this.assertTenantContext();
     const entityToSave = this.isTenantScoped ? { ...item, tenantId: this.tenantId } : item;
 
-    return from(this.repository.save(entityToSave) as Promise<T>);
+    return from(this.execute((repository) => repository.save(entityToSave) as Promise<T>));
   }
 
   update(id: string, item: T): Observable<T | null> {
     this.assertTenantContext();
 
-    return from((async () => {
+    return from(this.execute(async (repository) => {
       const whereClause: any = { id };
       if (this.isTenantScoped) whereClause.tenantId = this.tenantId;
 
-      const existing = await this.repository.findOne({ where: whereClause });
+      const existing = await repository.findOne({ where: whereClause });
       if (!existing) {
         return null;
       }
 
       const entityToSave = { ...existing, ...item, id };
 
-      return (await this.repository.save(entityToSave)) as unknown as T;
-    })());
+      return (await repository.save(entityToSave)) as unknown as T;
+    }));
   }
 
   find(options?: {
@@ -86,10 +98,10 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
       whereClause.tenantId = this.tenantId;
     }
 
-    return from(this.repository.find({
+    return from(this.execute((repository) => repository.find({
       ...options,
       where: whereClause
-    }) as Promise<T[]>);
+    }) as Promise<T[]>));
   }
 
   findOne(options?: {
@@ -102,9 +114,9 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
       whereClause.tenantId = this.tenantId;
     }
 
-    return from(this.repository.findOne({
+    return from(this.execute((repository) => repository.findOne({
       ...options,
       where: whereClause
-    }) as Promise<T | null>);
+    }) as Promise<T | null>));
   }
 }

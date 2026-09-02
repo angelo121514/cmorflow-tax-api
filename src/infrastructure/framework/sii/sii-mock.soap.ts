@@ -69,7 +69,7 @@ export class SiiMockSoap {
 
       // Generar token de sesión
       const token = 'MOCK_SII_TOKEN_' + forge.util.bytesToHex(forge.random.getBytesSync(16)).toUpperCase();
-      this.logger.log(`[MOCK SII SOAP] Firma de semilla VALIDADA con éxito. Token emitido: ${token}`);
+      this.logger.log('[MOCK SII SOAP] Firma de semilla validada; token temporal emitido.');
 
       const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -105,7 +105,7 @@ export class SiiMockSoap {
    * 3. Firma criptográfica (XMLDSig) del DTE interno.
    */
   public receiveDte(signedDteXml: string, token: string): { success: boolean; trackId?: string; errorMsg?: string } {
-    this.logger.log(`[MOCK SII SOAP] Recibido sobre DTE para validación de recepción con Token: ${token}`);
+    this.logger.log('[MOCK SII SOAP] Recibido sobre DTE con token temporal para validación.');
 
     if (!token || !token.startsWith('MOCK_SII_TOKEN_')) {
       this.logger.warn('[MOCK SII SOAP] Acceso denegado: Token de sesión inválido.');

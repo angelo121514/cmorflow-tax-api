@@ -1,6 +1,7 @@
 // backend/src/infrastructure/guards/integration-hmac.guard.spec.ts
 import { IntegrationHmacGuard } from './integration-hmac.guard';
 import { IntegrationSignatureUtil } from '../framework/integrations/integration-signature.util';
+import { Aes256Cipher } from '../framework/crypto/aes-256-cipher';
 import { MemoryGenericRepository } from '../framework/memory/memory-generic-repository';
 import { IntegrationCredentialEntity, IntegrationNonceEntity } from '@domain';
 
@@ -13,7 +14,7 @@ function buildGuard(credential: any | null, opts: { permissions?: string[] } = {
   const dataServices: any = { integrationCredential, integrationNonce };
   const cls = { set: jest.fn(), get: jest.fn() };
   const reflector: any = { getAllAndOverride: jest.fn(() => opts.permissions ?? undefined) };
-  const guard = new IntegrationHmacGuard(reflector, dataServices, cls as any);
+  const guard = new IntegrationHmacGuard(reflector, dataServices, cls as any, new Aes256Cipher());
   return { guard, dataServices, cls, integrationNonce };
 }
 
@@ -24,7 +25,7 @@ function seededCredential(overrides: any = {}) {
   return {
     id: 'cred-1',
     tenantId: TENANT_A,
-    keyId: 'cmk_test',
+    keyId: 'cmor_live_test',
     secretHash: IntegrationSignatureUtil.hashSecret(SECRET),
     secretLast4: 'xxxx',
     name: 'test',
@@ -41,12 +42,12 @@ function makeContext(overrides: any = {}, credential = seededCredential()) {
   const nonce = 'nonce-' + Math.random().toString(36).slice(2);
   const req: any = {
     method: 'POST',
-    originalUrl: '/api/v1/integrations/dte',
-    url: '/api/v1/integrations/dte',
+    originalUrl: '/api/v1/dtes',
+    url: '/api/v1/dtes',
     rawBody: Buffer.from(body),
     body: JSON.parse(body),
     headers: {
-      'x-api-key': 'cmk_test',
+      'x-api-key': 'cmor_live_test',
       'x-timestamp': timestamp,
       'x-nonce': nonce,
       ...overrides.headers,
@@ -74,6 +75,36 @@ function makeContext(overrides: any = {}, credential = seededCredential()) {
   }
   return { ctx, req, headers: req.headers };
 }
+
+describe('IntegrationHmacGuard — clave de firma derivada del secreto cifrado', () => {
+  const MASTER_KEY = 'k'.repeat(32);
+
+  beforeEach(() => {
+    process.env.INTEGRATIONS_API_ENABLED = 'true';
+    process.env.SII_MASTER_KEY = MASTER_KEY;
+  });
+  afterEach(() => { delete process.env.SII_MASTER_KEY; });
+
+  it('firma con el secreto descifrado cuando la credencial trae secretEncrypted', async () => {
+    const cipher = new Aes256Cipher();
+    const credential = seededCredential({
+      secretEncrypted: cipher.encrypt(SECRET, MASTER_KEY),
+    });
+    const { guard } = buildGuard(credential);
+    const { ctx } = makeContext({}, credential);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('rechaza (fail-closed) si el secreto cifrado no descifra con la master key actual', async () => {
+    const cipher = new Aes256Cipher();
+    const credential = seededCredential({
+      secretEncrypted: cipher.encrypt(SECRET, 'x'.repeat(32)),
+    });
+    const { guard } = buildGuard(credential);
+    const { ctx } = makeContext({}, credential);
+    await expect(guard.canActivate(ctx)).rejects.toThrow();
+  });
+});
 
 describe('IntegrationHmacGuard — autenticación HMAC fail-closed', () => {
   beforeEach(() => {
@@ -183,7 +214,7 @@ describe('IntegrationHmacGuard — autenticación HMAC fail-closed', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(cls.set).toHaveBeenCalledWith('tenantId', TENANT_A);
     expect(req.headers['x-tenant-id']).toBe(TENANT_A);
-    expect(req.integrationCredential.keyId).toBe('cmk_test');
+    expect(req.integrationCredential.keyId).toBe('cmor_live_test');
   });
 
   it('registra el nonce consumido para antireplay', async () => {

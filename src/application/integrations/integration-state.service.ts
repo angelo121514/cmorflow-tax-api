@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { IDataServices, IntegrationRequestEntity } from '@domain';
 import { IntegrationApiException } from './integration-api.exception';
 import { IntegrationErrorCode } from './integration-errors';
+import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
 
 /** Backoff de reintentos para fallos recuperables (1m, 5m, 15m, 60m, 6h). */
 export const INTEGRATION_RETRY_BACKOFF_MS = [
@@ -86,6 +87,8 @@ export class IntegrationStateService {
     @Optional()
     @Inject(INTEGRATION_EVENT_DISPATCHER)
     private readonly eventDispatcher?: IntegrationEventDispatcher,
+    @Optional()
+    private readonly metrics?: PrometheusService,
   ) {}
 
   async applyState(
@@ -126,6 +129,20 @@ export class IntegrationStateService {
       this.dataServices.integrationRequest.update(request.id!, request as any),
     );
     this.logger.log(`Solicitud ${request.id}: ${previousState} → ${newState} (${detail})`);
+    this.metrics?.integrationRequestsTotal.inc({ kind: request.kind, result: newState });
+    if (newState === 'submitted' && request.createdAt) {
+      this.metrics?.integrationRequestDurationSeconds.observe(
+        { kind: request.kind, phase: 'to_submitted' },
+        Math.max(0, (Date.now() - new Date(request.createdAt).getTime()) / 1000),
+      );
+    }
+    if (['accepted', 'observed', 'rejected'].includes(newState) && request.createdAt) {
+      this.metrics?.integrationRequestDurationSeconds.observe(
+        { kind: request.kind, phase: 'to_finalized' },
+        Math.max(0, (Date.now() - new Date(request.createdAt).getTime()) / 1000),
+      );
+    }
+    if (newState === 'rejected') this.metrics?.siiRejectionsTotal.inc({ document_type: String((request.payload as any)?.documentType ?? 'unknown') });
 
     if (NOTIFIABLE_STATES.has(newState) && this.eventDispatcher) {
       try {
@@ -143,6 +160,7 @@ export class IntegrationStateService {
     error: { code: string; message: string; retryable: true },
   ): Promise<IntegrationRequestEntity> {
     request.attempts = (request.attempts || 0) + 1;
+    this.metrics?.integrationRetriesTotal.inc({ kind: request.kind, error_code: error.code });
     request.lastError = error;
     if (request.attempts >= (request.maxAttempts || 5)) {
       return this.applyState(request, 'failed', `Reintentos agotados: ${error.message}`);

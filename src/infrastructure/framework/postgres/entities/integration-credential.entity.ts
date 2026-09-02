@@ -16,6 +16,14 @@ export class IntegrationCredentialEntity {
   @Column({ name: 'secret_hash', type: 'varchar' })
   secretHash: string;
 
+  /**
+   * Secreto cifrado (AES-256-GCM con SII_MASTER_KEY) para que un dump de BD
+   * no sirva como clave de firma HMAC. Las credenciales creadas antes de esta
+   * migración son NULL y siguen usando secretHash como clave (path legacy).
+   */
+  @Column({ name: 'secret_encrypted', type: 'jsonb', nullable: true })
+  secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null;
+
   @Column({ name: 'secret_last4', type: 'varchar', length: 8 })
   secretLast4: string;
 

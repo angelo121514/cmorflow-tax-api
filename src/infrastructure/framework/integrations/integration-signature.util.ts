@@ -17,7 +17,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
  *
  * - METHOD: HTTP method en mayúsculas.
  * - ruta: la ruta original de la petición, incluido query string
- *   (ej. `/api/v1/integrations/dte?x=1`).
+ *   (ej. `/api/v1/dtes?x=1`).
  * - sha256(body): hex del SHA-256 del body crudo; body vacío → hash de la
  *   cadena vacía.
  * - timestamp: epoch en segundos.
@@ -94,5 +94,11 @@ export class IntegrationSignatureUtil {
   /** Token HMAC (32 hex) para URLs firmadas de artefactos de corta duración. */
   static signUrlToken(secret: string, payload: string): string {
     return createHmac('sha256', secret).update(payload).digest('hex').slice(0, 32);
+  }
+
+  /** Comparación en tiempo constante para tokens hex truncados a 128 bits. */
+  static safeEqualsUrlToken(a: string, b: string): boolean {
+    if (!/^[0-9a-f]{32}$/i.test(a) || !/^[0-9a-f]{32}$/i.test(b)) return false;
+    return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
   }
 }

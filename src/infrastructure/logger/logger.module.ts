@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { PrometheusService } from './prometheus.service';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       },
     }),
   ],
-  exports: [],
+  providers: [PrometheusService],
+  exports: [PrometheusService],
 })
 export class LoggerModule {}

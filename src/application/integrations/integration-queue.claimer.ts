@@ -31,22 +31,38 @@ export class IntegrationQueueClaimer {
 
   async claimDue(limit: number): Promise<IntegrationRequestEntity[]> {
     try {
-      const rows: any[] = await this.dataSource.query(
-        `UPDATE integration_requests
-           SET state = 'processing',
-               locked_at = now(),
-               attempts = attempts + 1,
-               next_attempt_at = now() + make_interval(secs => $1)
-         WHERE id IN (
+      const rows: any[] = await this.dataSource.transaction(async (manager) => {
+        await manager.query(`SELECT set_config('app.worker_scope', 'true', true)`);
+        const result = await manager.query(
+        `WITH candidates AS MATERIALIZED (
            SELECT id FROM integration_requests
             WHERE (state = 'queued' OR (state = 'processing' AND next_attempt_at <= now()))
             ORDER BY created_at
             LIMIT $2
             FOR UPDATE SKIP LOCKED
          )
-         RETURNING *`,
-        [IntegrationQueueClaimer.LOCK_TIMEOUT_SECONDS, limit],
-      );
+         UPDATE integration_requests AS request
+           SET state = 'processing',
+               locked_at = now(),
+               next_attempt_at = now() + make_interval(secs => $1)
+          FROM candidates
+         WHERE request.id = candidates.id
+         RETURNING
+           request.id, request.tenant_id AS "tenantId", request.kind,
+           idempotency_key AS "idempotencyKey", request_hash AS "requestHash",
+           external_reference AS "externalReference", payload, metadata, state,
+           dte_id AS "dteId", rcof_id AS "rcofId",
+           origin_credential_id AS "originCredentialId", attempts,
+           max_attempts AS "maxAttempts", next_attempt_at AS "nextAttemptAt",
+           locked_at AS "lockedAt", last_error AS "lastError",
+           state_history AS "stateHistory", response_snapshot AS "responseSnapshot",
+           submitted_at AS "submittedAt", finalized_at AS "finalizedAt",
+           request.created_at AS "createdAt", request.updated_at AS "updatedAt"`,
+          [IntegrationQueueClaimer.LOCK_TIMEOUT_SECONDS, limit],
+        );
+        // TypeORM/pg retorna UPDATE ... RETURNING como [rows, rowCount].
+        return Array.isArray(result?.[0]) ? result[0] : result;
+      });
       return rows as IntegrationRequestEntity[];
     } catch (err) {
       if (this.isTestEnvironment()) {
@@ -82,7 +98,7 @@ export class IntegrationQueueClaimer {
           this.dataServices.integrationRequest.update((request as any).id!, {
             state: 'processing',
             lockedAt: new Date(),
-            attempts: (request.attempts || 0) + 1,
+            attempts: request.attempts || 0,
             nextAttemptAt: new Date(now + IntegrationQueueClaimer.LOCK_TIMEOUT_SECONDS * 1000),
           } as any),
         );

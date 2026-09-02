@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
@@ -10,6 +10,7 @@ import { TenantConfigEntity } from '../postgres/entities/tenant-config.entity';
 import { firstValueFrom } from 'rxjs';
 import { CertificateUtils } from './certificate.utils';
 import { DEFAULT_SII_MASTER_KEY, isDefaultMasterKey } from './sii-defaults.constant';
+import { PrometheusService } from '../../logger/prometheus.service';
 
 export enum CertificateType {
   REAL = 'REAL',
@@ -89,6 +90,7 @@ export class TenantConfigService {
     private readonly cafService: CafService,
     private readonly xsdValidator: SiiXsdValidator,
     private readonly configService: ConfigService,
+    @Optional() private readonly metrics?: PrometheusService,
   ) {
     this.masterKey = this.configService.get<string>('SII_MASTER_KEY', DEFAULT_SII_MASTER_KEY);
   }
@@ -100,6 +102,16 @@ export class TenantConfigService {
     this.configCache.delete(tenantId);
     this.signatureCache.delete(tenantId);
     this.logger.log(`Cache invalidado para tenant ${tenantId}`);
+  }
+
+  private async withTenantRepository<R>(
+    tenantId: string,
+    operation: (repository: Repository<TenantConfigEntity>) => Promise<R>,
+  ): Promise<R> {
+    return this.configRepo.manager.transaction(async (manager) => {
+      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      return operation(manager.getRepository(TenantConfigEntity));
+    });
   }
 
   /**
@@ -115,9 +127,9 @@ export class TenantConfigService {
 
     // 2. Consultar BD
     try {
-      const record = await this.configRepo.findOne({
-        where: { tenantId },
-      });
+      const record = await this.withTenantRepository(tenantId, (repository) =>
+        repository.findOne({ where: { tenantId } }),
+      );
       const config: TenantConfig = !record ? { cafs: [] } : (record.configJson as TenantConfig);
 
       // 3. Actualizar cache
@@ -150,18 +162,15 @@ export class TenantConfigService {
    * Invalida el cache después de guardar.
    */
   private async saveConfig(tenantId: string, config: TenantConfig): Promise<void> {
-    const existing = await this.configRepo.findOne({ where: { tenantId } });
-
-    if (existing) {
-      existing.configJson = config as any;
-      await this.configRepo.save(existing);
-    } else {
-      const newRecord = this.configRepo.create({
-        tenantId,
-        configJson: config as any,
-      });
-      await this.configRepo.save(newRecord);
-    }
+    await this.withTenantRepository(tenantId, async (repository) => {
+      const existing = await repository.findOne({ where: { tenantId } });
+      if (existing) {
+        existing.configJson = config as any;
+        await repository.save(existing);
+      } else {
+        await repository.save(repository.create({ tenantId, configJson: config as any }));
+      }
+    });
 
     // Invalidar cache después de mutación
     this.invalidateCache(tenantId);
@@ -473,6 +482,7 @@ export class TenantConfigService {
       const matchingCafs = config.cafs.filter((c) => c.type === type);
       
       if (matchingCafs.length === 0) {
+        this.metrics?.folioStockGauge.set({ tenant_id: tenantId, document_type: String(type), health: 'critical' }, 0);
         result.push({
           type,
           hasCaf: false,
@@ -521,6 +531,10 @@ export class TenantConfigService {
         alert,
         threshold: Math.round(threshold * 100),
       });
+      this.metrics?.folioStockGauge.set(
+        { tenant_id: tenantId, document_type: String(type), health: alert.toLowerCase() },
+        remaining,
+      );
     }
 
     return result;
@@ -539,15 +553,14 @@ export class TenantConfigService {
     const today = new Date();
     const diffTime = validToDate.getTime() - today.getTime();
     const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    this.metrics?.certificateExpiryDays.set({ tenant_id: tenantId }, daysRemaining);
 
     const isExpiringSoon = daysRemaining <= 30;
     const isExpired = daysRemaining < 0;
 
-    // Simular alerta push o email si está por expirar
     if (isExpiringSoon && !isExpired) {
       this.logger.warn(
-        `[ALERTA DE SEGURIDAD] La firma digital del inquilino ${tenantId} expira en ${daysRemaining} días (${config.signature.validTo}). ` +
-        `Se ha gatillado y despachado de forma proactiva una notificación push al celular del administrador y un correo de aviso.`
+        `[ALERTA DE SEGURIDAD] La firma digital del tenant ${tenantId} expira en ${daysRemaining} días (${config.signature.validTo}).`
       );
     }
 

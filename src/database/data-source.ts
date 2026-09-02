@@ -22,7 +22,7 @@ config();
 const configService = new ConfigService();
 const dbHost = configService.get<string>('DB_HOST', 'localhost');
 const isProduction = configService.get<string>('NODE_ENV') === 'production';
-const useSsl = !(dbHost === 'localhost' || dbHost === '127.0.0.1');
+const useSsl = configService.get<string>('DB_SSL', 'true') === 'true' && !(dbHost === 'localhost' || dbHost === '127.0.0.1');
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -49,7 +49,7 @@ export const AppDataSource = new DataSource({
   synchronize: false,
   migrations: [__dirname + '/migrations/*.{ts,js}'],
   migrationsTableName: 'typeorm_migrations',
-  ssl: useSsl ? { rejectUnauthorized: false } : false,
+  ssl: useSsl ? { rejectUnauthorized: configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED', 'true') !== 'false' } : false,
   logging: isProduction ? ['error'] : ['error', 'warn', 'migration'],
 });
 

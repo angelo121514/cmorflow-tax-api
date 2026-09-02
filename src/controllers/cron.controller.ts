@@ -4,20 +4,17 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../infrastructure/decorators/public.decorator';
 import { ClsService } from 'nestjs-cls';
 import { IntegrationOrchestratorService } from '../application/integrations/integration-orchestrator.service';
+import { CronHmacGuard } from '../infrastructure/guards/cron-hmac.guard';
 
 /**
  * Endpoints internos para disparar workers desde GitHub Actions.
- * Protegidos por CronHmacGuard (HMAC antireplay con CRON_HMAC_SECRET).
- * Render Free no garantiza SLA de workers permanentes; estos endpoints
- * permiten ejecución determinista desde cron externo.
- *
- * NOTA: CronHmacGuard se importa del módulo de guards cuando esté disponible.
- * Por ahora los endpoints son @Public y se protegen por la red (sólo Render
- * los expone). En producción se debe añadir el guard HMAC.
+ * Protegidos por CronHmacGuard (HMAC con CRON_HMAC_SECRET). Son un fallback
+ * operativo; el worker persistente es el mecanismo principal.
  */
 @ApiTags('internal')
 @Controller('internal/cron')
 @Public()
+@UseGuards(CronHmacGuard)
 export class CronController {
   private readonly logger = new Logger(CronController.name);
 
@@ -53,7 +50,7 @@ export class CronController {
 
   @Post('rcof-daily')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'RCOF diario automático por tenant (diario 05:00 UTC)' })
+  @ApiOperation({ summary: 'RCOF diario automático por tenant (zona America/Santiago)' })
   async rcofDaily() {
     return this.runCrossTenant('rcof-daily', () => this.orchestrator.rcofDaily() as Promise<any>);
   }

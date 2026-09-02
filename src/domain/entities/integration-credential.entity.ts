@@ -12,10 +12,16 @@
 export class IntegrationCredentialEntity {
   id?: string;
   tenantId: string;
-  /** Identificador público de la credencial (prefijo `cmk_`). */
+  /** Identificador público de la credencial (prefijo `cmor_live_`). */
   keyId: string;
   /** SHA-256 hex del secreto. Nunca el secreto en claro. */
   secretHash: string;
+  /**
+   * Secreto cifrado con SII_MASTER_KEY (AES-256-GCM). Presente en credenciales
+   * nuevas: permite al guard firmar sin que el dump de BD sea una clave HMAC
+   * usable. Credenciales legacy (NULL) siguen usando secretHash como clave.
+   */
+  secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null;
   /** Últimos 4 caracteres del secreto, para identificarlo en la UI. */
   secretLast4: string;
   /** Etiqueta descriptiva (ej. "CMORAPR staging"). */

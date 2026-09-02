@@ -9,6 +9,22 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tax_api_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tax_api_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_E2E_URL: postgres://postgres:postgres@127.0.0.1:5432/tax_api_e2e
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,4 +34,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test -- --silent
+      - run: npm run test:e2e -- --runInBand
       - run: npm run openapi:check
+      - run: npx prettier --check render.yaml
+      - run: docker build --tag cmorflow-tax-api:ci .

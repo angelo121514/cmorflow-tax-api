@@ -7,13 +7,7 @@
 name: Cron Jobs
 
 on:
-  schedule:
-    # Reconciler: cola + polling SII + webhooks + purge nonces (cada 5 min)
-    - cron: '*/5 * * * *'
-    # Entregas de webhooks vencidas (cada 2 min)
-    - cron: '*/2 * * * *'
-    # RCOF diario automático (05:00 UTC = 06:00 Santiago)
-    - cron: '0 5 * * *'
+  # Fallback manual. El background worker de Render es el ejecutor principal.
   workflow_dispatch:
 
 jobs:
@@ -44,13 +38,16 @@ jobs:
           fi
           BODY='{"job":"'${{ matrix.job }}'"}'
           TIMESTAMP=$(date +%s)
-          SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$CRON_HMAC_SECRET" | sed 's/^.* //')
+          NONCE=$(openssl rand -hex 16)
+          SIGNED_PAYLOAD="$TIMESTAMP.$NONCE.$BODY"
+          SIGNATURE=$(echo -n "$SIGNED_PAYLOAD" | openssl dgst -sha256 -hmac "$CRON_HMAC_SECRET" | sed 's/^.* //')
           echo "→ POST $CRON_API_BASE_URL${{ matrix.endpoint }}"
           for attempt in 1 2 3; do
             HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
               -X POST "$CRON_API_BASE_URL${{ matrix.endpoint }}" \
               -H "Content-Type: application/json" \
               -H "X-Cron-Timestamp: $TIMESTAMP" \
+              -H "X-Cron-Nonce: $NONCE" \
               -H "X-Cron-Signature: $SIGNATURE" \
               -d "$BODY" --max-time 30 || true)
             echo "  Attempt $attempt: HTTP $HTTP_CODE"

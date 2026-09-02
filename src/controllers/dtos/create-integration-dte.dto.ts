@@ -9,6 +9,7 @@ import {
   IsObject,
   IsBoolean,
   IsInt,
+  IsDateString,
   Min,
   Max,
   ValidateNested,
@@ -24,7 +25,7 @@ import { DteTransportDto, DteTaxRetentionDto } from './emit-dte.dto';
 export const INTEGRATION_DTE_TYPES = [33, 34, 39, 41, 46, 52, 56, 61];
 
 export class IntegrationReceiverDto {
-  @ApiProperty({ example: '76123456-7', description: 'RUT del receptor' })
+  @ApiProperty({ example: '76.123.456-0', description: 'RUT del receptor' })
   @IsNotEmpty()
   @IsString()
   @IsChileanRut()
@@ -264,7 +265,7 @@ export class CreateIntegrationNoteDto {
 export class CreateIntegrationRcofDto {
   @ApiProperty({ example: '2026-08-14', description: 'Fecha del consumo de folios (YYYY-MM-DD)' })
   @IsNotEmpty()
-  @IsString()
+  @IsDateString({}, { message: 'date debe ser una fecha ISO-8601 válida (YYYY-MM-DD).' })
   date: string;
 
   @ApiProperty({ example: 1, required: false, description: 'Secuencia del envío (default 1; >1 para reenvíos corregidos)' })

@@ -8,7 +8,7 @@ describe('IntegrationSignatureUtil — contrato de firma B2B', () => {
   it('el hash del secreto sirve como clave de firma verificable (cliente y servidor derivan igual)', () => {
     const canonical = IntegrationSignatureUtil.canonicalString(
       'POST',
-      '/api/v1/integrations/dte',
+      '/api/v1/dtes',
       IntegrationSignatureUtil.bodyHash('{"a":1}'),
       '1700000000',
       'nonce-1',
@@ -28,7 +28,7 @@ describe('IntegrationSignatureUtil — contrato de firma B2B', () => {
   });
 
   it('un cambio en cualquier componente del canónico invalida la firma', () => {
-    const parts: [string, string, string, string, string] = ['GET', '/api/v1/integrations/dte?x=1', 'ab'.repeat(32), '1700000000', 'n'];
+    const parts: [string, string, string, string, string] = ['GET', '/api/v1/dtes?x=1', 'ab'.repeat(32), '1700000000', 'n'];
     const base = IntegrationSignatureUtil.canonicalString(...parts);
     const sig = IntegrationSignatureUtil.sign(signingKey, base);
     const tampered = IntegrationSignatureUtil.canonicalString('POST', parts[1], parts[2], parts[3], parts[4]);

@@ -42,7 +42,7 @@ Cada petición debe incluir cuatro encabezados:
 
 | Header | Descripción |
 |---|---|
-| `X-Api-Key` | Identificador público de la credencial (`cmk_…`). |
+| `X-Api-Key` | Identificador público de la credencial (`cmor_live_…`). |
 | `X-Timestamp` | Epoch en segundos (ventana ±300s). |
 | `X-Nonce` | UUID único por petición dentro de la ventana. |
 | `X-Signature` | HMAC-SHA256 hex del string canónico. |
@@ -54,7 +54,7 @@ METHOD\n<ruta con query>\n<sha256(body)>\n<timestamp>\n<nonce>
 ```
 
 - `METHOD`: HTTP method en mayúsculas (`POST`, `GET`).
-- `<ruta con query>`: la ruta original de la petición, incluido query string (ej. `/api/v1/integrations/dte?externalReference=APR-1`).
+- `<ruta con query>`: la ruta original de la petición, incluido query string (ej. `/api/v1/dtes?externalReference=APR-1`).
 - `<sha256(body)>`: SHA-256 hex del body crudo. Body vacío → hash de cadena vacía.
 - `<timestamp>`: el mismo valor de `X-Timestamp`.
 - `<nonce>`: el mismo valor de `X-Nonce`.
@@ -68,7 +68,7 @@ La clave HMAC es `sha256hex(secreto)`, donde `secreto` es el valor `cmc_…` que
 ```typescript
 import { createHash, createHmac, randomUUID } from 'crypto';
 
-const apiKey = 'cmk_xxx';
+const apiKey = 'cmor_live_xxx';
 const secret = 'cmc_xxx'; // guardado de forma segura en el integrador
 const signingKey = createHash('sha256').update(secret).digest('hex');
 
@@ -94,32 +94,32 @@ const body = Buffer.from(JSON.stringify({
   metadata: { periodoApr: '2026-07', numeroCuenta: 'CTA-88021' },
 }));
 const headers = {
-  ...signRequest('POST', '/api/v1/integrations/dte', body),
+  ...signRequest('POST', '/api/v1/dtes', body),
   'Content-Type': 'application/json',
   'Idempotency-Key': randomUUID(),
 };
-const response = await fetch('https://api.cmorflow.cl/api/v1/integrations/dte', {
+const response = await fetch('https://api.cmorflow.cl/api/v1/dtes', {
   method: 'POST',
   headers,
   body,
 });
-// → 202 { requestId, status: 'queued', _links: { self: '/api/v1/integrations/dte/{requestId}' } }
+// → 202 { requestId, status: 'queued', _links: { self: '/api/v1/dtes/{requestId}' } }
 ```
 
 ### Ejemplo en curl
 
 ```bash
-API_KEY="cmk_xxx"
+API_KEY="cmor_live_xxx"
 SECRET="cmc_xxx"
 TIMESTAMP=$(date +%s)
 NONCE=$(uuidgen)
 BODY='{"documentType":39,"items":[{"name":"Consumo agua","quantity":1,"unitPrice":45000}],"externalReference":"APR-1"}'
 BODY_HASH=$(echo -n "$BODY" | sha256sum | awk '{print $1}')
-CANONICAL="POST\n/api/v1/integrations/dte\n${BODY_HASH}\n${TIMESTAMP}\n${NONCE}"
+CANONICAL="POST\n/api/v1/dtes\n${BODY_HASH}\n${TIMESTAMP}\n${NONCE}"
 SIGNING_KEY=$(echo -n "$SECRET" | sha256sum | awk '{print $1}')
 SIGNATURE=$(printf "${CANONICAL}" | openssl dgst -sha256 -hmac "${SIGNING_KEY}" | awk '{print $2}')
 
-curl -X POST https://api.cmorflow.cl/api/v1/integrations/dte \
+curl -X POST https://api.cmorflow.cl/api/v1/dtes \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: ${API_KEY}" \
   -H "X-Timestamp: ${TIMESTAMP}" \
@@ -131,7 +131,7 @@ curl -X POST https://api.cmorflow.cl/api/v1/integrations/dte \
 
 ## 2. Emisión de DTE
 
-### `POST /integrations/dte`
+### `POST /dtes`
 
 Requiere `Idempotency-Key` (UUID). Responde `202` con `requestId` y estado inicial `queued`.
 
@@ -152,15 +152,15 @@ El servidor **recalcula y valida los totales** (IVA 19%, descuentos, redondeo CL
 | 46 | Factura de compra | Requiere autorización especial del SII. |
 | 52 | Guía de despacho | Requiere `transport.transferType`. |
 
-Las notas de crédito (61) y débito (56) se emiten vía `POST /integrations/dte/:dteId/credit-notes` y `/debit-notes` respectivamente.
+Las notas de crédito (61) y débito (56) se emiten vía `POST /dtes/:dteId/credit-notes` y `/debit-notes` respectivamente.
 
 ## 3. Consulta de estado
 
-### `GET /integrations/dte/:requestId`
+### `GET /dtes/:requestId`
 
 Devuelve el estado consolidado: estado público, folio, TrackID, estado SII, errores normalizados y timestamps.
 
-### `GET /integrations/dte?externalReference=...`
+### `GET /dtes?externalReference=...`
 
 Reconcilia una operación por su referencia externa de negocio.
 
@@ -177,21 +177,21 @@ Reconcilia una operación por su referencia externa de negocio.
 ### Descarga autenticada
 
 ```
-GET /integrations/dte/:dteId/xml   (permiso dte:download)
-GET /integrations/dte/:dteId/pdf   (permiso dte:download)
+GET /dtes/:dteId/xml   (permiso artifacts:read)
+GET /dtes/:dteId/pdf   (permiso artifacts:read)
 ```
 
 ### URL firmada de corta duración
 
 ```
-POST /integrations/dte/:dteId/artifact-links
+POST /dtes/:dteId/artifact-links
 → { xmlUrl, pdfUrl, expiresAt }
 ```
 
 El token es válido 5 minutos. Descarga sin headers HMAC:
 
 ```
-GET /integrations/artifacts/:token
+GET /artifacts/:token
 ```
 
 Los artefactos **nunca** se sirven desde buckets públicos.
@@ -242,7 +242,7 @@ if (signature !== expected) return res.status(401).end();
 
 ## 6. RCOF (Consumo de Folios)
 
-### `POST /integrations/rcof`
+### `POST /rcof`
 
 ```
 { "date": "2026-08-14", "sequenceNumber": 1 }
@@ -250,7 +250,7 @@ if (signature !== expected) return res.status(401).end();
 
 Idempotente por (tenant, fecha, secuencia). Consolida boletas 39/41 del día (incluye folios anulados), firma, persiste y transmite al SII.
 
-### `GET /integrations/rcof/:id`
+### `GET /rcof/:id`
 
 Estado del RCOF: estado, TrackID, respuesta SII.
 
@@ -287,15 +287,15 @@ El sistema genera automáticamente el RCOF del día anterior (zona `America/Sant
 
 Los endpoints administrativos requieren JWT con permiso `INTEGRATION_MANAGE`:
 
-- `POST /integrations/credentials` — crear credencial (secreto una sola vez).
-- `GET /integrations/credentials` — listar enmascaradas.
-- `POST /integrations/credentials/:id/rotate` — rotar (24h de gracia).
-- `POST /integrations/credentials/:id/revoke` — revocar.
-- `POST /integrations/webhooks` — registrar endpoint.
-- `GET /integrations/webhooks` — listar endpoints.
-- `POST /integrations/webhooks/:id/deactivate` — desactivar.
-- `POST /integrations/webhooks/events/:eventId/redeliver` — reenviar evento.
-- `GET /integrations/webhooks/deliveries` — historial de entregas.
+- `POST /credentials` — crear credencial (secreto una sola vez).
+- `GET /credentials` — listar enmascaradas.
+- `POST /credentials/:id/rotate` — rotar (24h de gracia).
+- `POST /credentials/:id/revoke` — revocar.
+- `POST /webhooks` — registrar endpoint.
+- `GET /webhooks` — listar endpoints.
+- `POST /webhooks/:id/deactivate` — desactivar.
+- `POST /webhooks/events/:eventId/redeliver` — reenviar evento.
+- `GET /webhooks/deliveries` — historial de entregas.
 
 ## 9. Consideraciones operacionales
 

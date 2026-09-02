@@ -22,7 +22,7 @@ export interface SignedArtifact {
  * URL firmada de corta duración. Nunca buckets públicos.
  *
  * Token: base64url(JSON payload).hex32(HMAC) — verificado en el endpoint
- * público /integrations/artifacts/:token.
+ * público /artifacts/:token.
  */
 @Injectable()
 export class IntegrationArtifactsService {
@@ -58,7 +58,7 @@ export class IntegrationArtifactsService {
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const sig = IntegrationSignatureUtil.signUrlToken(this.urlSecret, body);
     return {
-      url: `/api/v1/integrations/artifacts/${body}.${sig}`,
+      url: `/api/v1/artifacts/${body}.${sig}`,
       expiresAt: new Date(payload.exp * 1000).toISOString(),
     };
   }
@@ -71,7 +71,7 @@ export class IntegrationArtifactsService {
     const body = token.slice(0, dot);
     const sig = token.slice(dot + 1);
     const expected = IntegrationSignatureUtil.signUrlToken(this.urlSecret, body);
-    if (sig !== expected) {
+    if (sig.length !== expected.length || !IntegrationSignatureUtil.safeEqualsUrlToken(sig, expected)) {
       throw new IntegrationApiException(IntegrationErrorCode.NOT_FOUND, 'Token inválido.', 404);
     }
     let payload: SignedArtifact;

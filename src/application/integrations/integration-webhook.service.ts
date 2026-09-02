@@ -1,7 +1,10 @@
 // backend/src/application/integrations/integration-webhook.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
-import { createHmac } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
+import { Agent } from 'undici';
 import {
   IDataServices,
   IntegrationRequestEntity,
@@ -11,6 +14,9 @@ import {
 import { Aes256Cipher } from '../../infrastructure/framework/crypto/aes-256-cipher';
 import { INTEGRATION_WEBHOOK_EVENTS } from './integration-errors';
 import type { IntegrationEventDispatcher } from './integration-state.service';
+import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
+import { ClsService } from 'nestjs-cls';
+import { DataSource } from 'typeorm';
 
 /** Backoff de reintentos de entrega: 1m, 5m, 15m, 30m, 60m, 6h (6 intentos). */
 const DELIVERY_BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -35,6 +41,9 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
   constructor(
     private readonly dataServices: IDataServices,
     private readonly aesCipher: Aes256Cipher,
+    private readonly metrics?: PrometheusService,
+    private readonly cls?: ClsService,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
 
   private masterKey(): string {
@@ -51,6 +60,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
     tenantId: string,
     input: { url: string; events: string[]; description?: string },
   ): Promise<{ endpoint: any; secret: string }> {
+    await this.assertSafeWebhookUrl(input.url);
     if (!/^https:\/\//i.test(input.url)) {
       throw new Error('La URL del webhook debe ser HTTPS.');
     }
@@ -64,7 +74,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       throw new Error('Debe suscribir al menos un evento.');
     }
 
-    const secret = 'whsec_' + createHmac('sha256', Math.random().toString()).update(String(Date.now())).digest('hex');
+    const secret = 'whsec_' + randomBytes(32).toString('hex');
     const cipher = this.aesCipher.encrypt(secret, this.masterKey());
 
     const endpoint = await firstValueFrom(
@@ -201,6 +211,79 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
 
   /** Entrega las entregas vencidas (bounded batch). Devuelve el resumen. */
   async deliverDue(limit = 10): Promise<{ attempted: number; delivered: number; failed: number }> {
+    if (this.dataSource && this.cls) {
+      const claimed = await this.claimDueDeliveries(limit);
+      return this.deliverClaimed(claimed);
+    }
+    if (this.cls && this.dataServices.tenant?.getAll) {
+      const totals = { attempted: 0, delivered: 0, failed: 0 };
+      const tenants = await firstValueFrom(this.dataServices.tenant.getAll());
+      for (const tenant of tenants) {
+        if (totals.attempted >= limit) break;
+        const result = await this.cls.run({} as any, async () => {
+          this.cls!.set('tenantId', tenant.id!);
+          return this.deliverDueForCurrentTenant(limit - totals.attempted);
+        });
+        totals.attempted += result.attempted;
+        totals.delivered += result.delivered;
+        totals.failed += result.failed;
+      }
+      return totals;
+    }
+    return this.deliverDueForCurrentTenant(limit);
+  }
+
+  private async claimDueDeliveries(limit: number): Promise<any[]> {
+    return this.dataSource!.transaction(async (manager) => {
+      await manager.query(`SELECT set_config('app.worker_scope', 'true', true)`);
+      const result = await manager.query(
+        `WITH candidates AS MATERIALIZED (
+            SELECT id FROM integration_webhook_deliveries
+             WHERE status IN ('pending', 'delivering') AND next_attempt_at <= now() AND attempt < max_attempts
+             ORDER BY next_attempt_at, created_at
+             LIMIT $1
+             FOR UPDATE SKIP LOCKED
+          )
+          UPDATE integration_webhook_deliveries AS delivery
+            SET status = 'delivering', next_attempt_at = now() + interval '10 minutes'
+           FROM candidates
+          WHERE delivery.id = candidates.id
+          RETURNING delivery.id, delivery.tenant_id AS "tenantId", delivery.event_id AS "eventId",
+            delivery.endpoint_id AS "endpointId", delivery.attempt, delivery.max_attempts AS "maxAttempts",
+            delivery.status, delivery.next_attempt_at AS "nextAttemptAt"`,
+        [limit],
+      );
+      // TypeORM/pg retorna UPDATE ... RETURNING como [rows, rowCount].
+      return Array.isArray(result?.[0]) ? result[0] : result;
+    });
+  }
+
+  private async deliverClaimed(deliveries: any[]): Promise<{ attempted: number; delivered: number; failed: number }> {
+    const result = { attempted: 0, delivered: 0, failed: 0 };
+    for (const delivery of deliveries) {
+      result.attempted++;
+      await this.cls!.run({} as any, async () => {
+        this.cls!.set('tenantId', delivery.tenantId);
+        try {
+          const ok = await this.attemptDelivery(delivery);
+          if (ok) result.delivered++;
+          else result.failed++;
+          this.metrics?.webhookDeliveriesTotal.inc({ status: ok ? 'delivered' : 'failed' });
+        } catch (error) {
+          result.failed++;
+          this.metrics?.webhookDeliveriesTotal.inc({ status: 'failed' });
+          await firstValueFrom(this.dataServices.integrationWebhookDelivery.update(delivery.id, {
+            status: 'pending', lastError: (error as Error).message,
+            nextAttemptAt: new Date(Date.now() + DELIVERY_BACKOFF_MS[0]),
+          } as any)).catch(() => undefined);
+          this.logger.warn(`Entrega ${delivery.id} falló: ${(error as Error).message}`);
+        }
+      });
+    }
+    return result;
+  }
+
+  private async deliverDueForCurrentTenant(limit: number): Promise<{ attempted: number; delivered: number; failed: number }> {
     let attempted = 0;
     let delivered = 0;
     let failed = 0;
@@ -219,11 +302,14 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
         const ok = await this.attemptDelivery(delivery);
         if (ok) {
           delivered++;
+          this.metrics?.webhookDeliveriesTotal.inc({ status: 'delivered' });
         } else {
           failed++;
+          this.metrics?.webhookDeliveriesTotal.inc({ status: 'failed' });
         }
       } catch (err) {
         failed++;
+        this.metrics?.webhookDeliveriesTotal.inc({ status: 'failed' });
         this.logger.warn(`Entrega ${delivery.id} falló: ${(err as Error).message}`);
       }
     }
@@ -261,23 +347,33 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
     let responseStatus: number | null = null;
     let snippet: string | null = null;
     let error: string | null = null;
+    // Pinning de IP: la conexión sale hacia la IP validada por el lookup del
+    // dispatcher (anti DNS rebinding), no hacia una resolución posterior.
+    const dispatcher = this.buildPinnedDispatcher();
     try {
+      await this.assertSafeWebhookUrl(endpoint.url);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
-      const response = await fetch(endpoint.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'CmorFlow-Webhooks/1.0',
-          'X-CmorFlow-Event-Id': event.id!,
-          'X-CmorFlow-Event-Type': event.type,
-          'X-CmorFlow-Timestamp': timestamp,
-          'X-CmorFlow-Signature': signature,
-        },
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      let response: Response;
+      try {
+        response = await fetch(endpoint.url, {
+          method: 'POST',
+          redirect: 'error',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'CmorFlow-Webhooks/1.0',
+            'X-CmorFlow-Event-Id': event.id!,
+            'X-CmorFlow-Event-Type': event.type,
+            'X-CmorFlow-Timestamp': timestamp,
+            'X-CmorFlow-Signature': signature,
+          },
+          body,
+          signal: controller.signal,
+          dispatcher,
+        } as RequestInit);
+      } finally {
+        clearTimeout(timer);
+      }
       responseStatus = response.status;
       snippet = (await response.text()).slice(0, RESPONSE_SNIPPET_MAX);
       if (!response.ok) {
@@ -285,6 +381,8 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    } finally {
+      void dispatcher.close().catch(() => undefined);
     }
 
     const attempt = delivery.attempt + 1;
@@ -303,6 +401,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
     }
 
     const exhausted = attempt >= delivery.maxAttempts;
+    if (exhausted) this.metrics?.webhookDeliveriesTotal.inc({ status: 'dead' });
     await firstValueFrom(
       this.dataServices.integrationWebhookDelivery.update(delivery.id, {
         attempt,
@@ -374,5 +473,78 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       stored.authTag,
       stored.salt,
     );
+  }
+
+  /** Prevent the webhook facility from being used to access private infrastructure. */
+  private async assertSafeWebhookUrl(value: string): Promise<void> {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error('La URL del webhook no es válida.');
+    }
+    if (url.protocol !== 'https:' || url.username || url.password) {
+      throw new Error('La URL del webhook debe ser HTTPS y no puede incluir credenciales.');
+    }
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    const assertPublic = (address: string) => {
+      if (this.isPrivateAddress(address)) throw new Error('La URL del webhook no puede resolver a una red privada o local.');
+    };
+    if (isIP(host)) {
+      assertPublic(host);
+      return;
+    }
+    // Jest endpoints are deliberately non-resolvable; production always validates DNS.
+    if (process.env.NODE_ENV === 'test') return;
+    const addresses = await lookup(host, { all: true, verbatim: true });
+    if (!addresses.length) throw new Error('La URL del webhook no resolvió a una dirección pública.');
+    addresses.forEach((entry) => assertPublic(entry.address));
+  }
+
+  private isPrivateAddress(address: string): boolean {
+    if (address === '::1' || address === '::' || address.startsWith('fe80:') || address.startsWith('fc') || address.startsWith('fd')) return true;
+    if (address.startsWith('::ffff:')) return this.isPrivateAddress(address.slice(7));
+    const parts = address.split('.').map(Number);
+    return parts.length === 4 && (
+      parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168)
+    );
+  }
+
+  /**
+   * Lookup para el dispatcher de entrega: resuelve DNS y valida cada dirección
+   * ANTES de que se abra la conexión. Cierra la ventana TOCTOU de DNS rebinding
+   * (assertSafeWebhookUrl valida en otro momento; aquí la IP que se valida es
+   * exactamente la IP a la que conecta el socket, con SNI/Host del hostname).
+   */
+  private safeLookup(
+    hostname: string,
+    options: unknown,
+    callback: (err: NodeJS.ErrnoException | null, address?: string, family?: number) => void,
+  ): void {
+    lookup(hostname, { all: true, verbatim: true })
+      .then((addresses) => {
+        const safe = addresses.find((entry) => !this.isPrivateAddress(entry.address));
+        if (!safe) {
+          callback(Object.assign(new Error(`La URL del webhook no resolvió a una dirección pública (${hostname}).`), { code: 'ENOTFOUND' }));
+          return;
+        }
+        callback(null, safe.address, safe.family);
+      })
+      .catch((err) => callback(err));
+  }
+
+  private buildPinnedDispatcher(): Agent {
+    return new Agent({
+      connect: {
+        lookup: ((hostname: string, options: unknown, callback: (err: NodeJS.ErrnoException | null, address?: string, family?: number) => void) =>
+          this.safeLookup(hostname, options, callback)) as never,
+      },
+      headersTimeout: DELIVERY_TIMEOUT_MS,
+      bodyTimeout: DELIVERY_TIMEOUT_MS,
+    });
   }
 }

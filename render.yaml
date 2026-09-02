@@ -1,50 +1,71 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# Create the "cmorflow-tax-production" environment group in Render with:
+# DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SCHEMA, DB_SSL,
+# DB_SSL_REJECT_UNAUTHORIZED, SII_MASTER_KEY, INTEGRATION_URL_SECRET,
+# CRON_HMAC_SECRET, METRICS_BEARER_TOKEN and any SII endpoint overrides.
 services:
   - type: web
     name: cmorflow-tax-api
-    runtime: node
+    runtime: docker
     region: ohio
-    plan: free
+    plan: starter
     branch: main
-    buildCommand: npm ci && npm run build
-    startCommand: npm run start:prod
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    preDeployCommand: node start-migrate.js
     healthCheckPath: /api/v1/ready
-    autoDeploy: true
+    autoDeployTrigger: checksPass
     envVars:
+      - fromGroup: cmorflow-tax-production
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: AUTO_RUN_MIGRATIONS
+        value: "false"
+      - key: SII_INTEGRATION_MODE
+        value: real
+      - key: SII_ENVIRONMENT
+        value: certification
+      - key: SII_XSD_VALIDATION_ENABLED
+        value: "true"
+      - key: INTEGRATIONS_API_ENABLED
+        value: "true"
+      - key: INTEGRATION_WORKER_ENABLED
+        value: "false"
+      - key: API_DOCS_ENABLED
+        value: "false"
+      - key: METRICS_ENABLED
+        value: "true"
+
+  - type: worker
+    name: cmorflow-tax-worker
+    runtime: docker
+    region: ohio
+    plan: starter
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node start-worker.js
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - fromGroup: cmorflow-tax-production
       - key: NODE_ENV
         value: production
       - key: AUTO_RUN_MIGRATIONS
         value: "false"
-      - key: PORT
-        value: "10000"
-      - key: DB_HOST
-        value: aws-1-us-east-2.pooler.supabase.com
-      - key: DB_PORT
-        value: "5432"
-      - key: DB_USER
-        value: cmorflow_app.wirwadxtrblslfwayple
-      - key: DB_PASSWORD
-        value: "REPLACE_ME"
-      - key: DB_NAME
-        value: postgres
-      - key: DB_SCHEMA
-        value: public
-      - key: DB_SSL
-        value: "true"
-      - key: SII_MASTER_KEY
-        value: "REPLACE_ME"
       - key: SII_INTEGRATION_MODE
-        value: mock
+        value: real
       - key: SII_ENVIRONMENT
         value: certification
       - key: SII_XSD_VALIDATION_ENABLED
-        value: "false"
+        value: "true"
       - key: INTEGRATIONS_API_ENABLED
         value: "true"
-      - key: INTEGRATION_HMAC_WINDOW_SECONDS
-        value: "300"
-      - key: INTEGRATION_RATE_LIMIT_PER_MIN
-        value: "60"
-      - key: CRON_HMAC_SECRET
-        value: "REPLACE_ME"
-      - key: CORS_ORIGINS
-        value: ""
+      - key: INTEGRATION_WORKER_ENABLED
+        value: "true"
+      - key: INTEGRATION_WORKER_INTERVAL_MS
+        value: "60000"
+      - key: RCOF_DAILY_HOUR
+        value: "6"

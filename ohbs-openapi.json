@@ -527,7 +527,7 @@
             "description": ""
           }
         },
-        "summary": "RCOF diario automático por tenant (diario 05:00 UTC)",
+        "summary": "RCOF diario automático por tenant (zona America/Santiago)",
         "tags": [
           "internal"
         ]
@@ -560,6 +560,71 @@
         "summary": "Listo para tráfico (readiness): Postgres + config + crypto",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/configuration/caf": {
+      "post": {
+        "operationId": "TenantConfigController_uploadCaf",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCafDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Cargar XML CAF completo del SII",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
+    "/api/v1/configuration/signature": {
+      "post": {
+        "operationId": "TenantConfigController_saveSignature",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSignatureDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Guardar certificado digital PFX cifrado",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
+    "/api/v1/configuration/folios": {
+      "get": {
+        "operationId": "TenantConfigController_getFolios",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "[Admin] Consultar stock y estado de folios CAF",
+        "tags": [
+          "configuration"
         ]
       }
     }
@@ -612,7 +677,7 @@
         "properties": {
           "rut": {
             "type": "string",
-            "example": "76123456-7",
+            "example": "76.123.456-0",
             "description": "RUT del receptor"
           },
           "name": {
@@ -1056,6 +1121,35 @@
         "required": [
           "url",
           "events"
+        ]
+      },
+      "UploadCafDto": {
+        "type": "object",
+        "properties": {
+          "cafXml": {
+            "type": "string",
+            "description": "XML completo <AUTORIZACION> entregado por el SII."
+          }
+        },
+        "required": [
+          "cafXml"
+        ]
+      },
+      "SaveSignatureDto": {
+        "type": "object",
+        "properties": {
+          "pfxBase64": {
+            "type": "string",
+            "description": "Certificado PFX/P12 codificado en base64."
+          },
+          "password": {
+            "type": "string",
+            "description": "Contraseña del certificado PFX/P12."
+          }
+        },
+        "required": [
+          "pfxBase64",
+          "password"
         ]
       }
     }

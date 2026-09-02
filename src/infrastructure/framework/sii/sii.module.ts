@@ -7,7 +7,6 @@ import { SignatureEngine } from './signature.engine';
 import { CAFEngine } from './caf.engine';
 import { SiiSoapClient } from './sii-soap.client';
 import { SiiMockSoap } from './sii-mock.soap';
-import { DteXmlBuilder } from './dte-xml.builder';
 import { PdfGenerator } from './pdf.generator';
 import { SiiEnvironmentConfig } from './sii-environment.config';
 import { CafService } from './caf.service';
@@ -16,6 +15,7 @@ import { SiiAuthTokenService } from './sii-auth-token.service';
 import { SiiXsdValidator } from './sii-xsd.validator';
 import { TenantConfigService } from './tenant-config.service';
 import { DiscountEngine } from './discount.engine';
+import { LoggerModule } from '../../logger/logger.module';
 
 /**
  * SiiModule reducido para la Tax API: sin libros, sin intercambio de
@@ -26,6 +26,7 @@ import { DiscountEngine } from './discount.engine';
   imports: [
     DataServicesModule,
     TypeOrmModule.forFeature([TenantConfigEntity]),
+    LoggerModule,
   ],
   providers: [
     Aes256Cipher,
@@ -39,7 +40,6 @@ import { DiscountEngine } from './discount.engine';
     DteXmlEngine,
     SiiAuthTokenService,
     SiiXsdValidator,
-    DteXmlBuilder,
     PdfGenerator,
     TenantConfigService,
   ],
@@ -55,7 +55,6 @@ import { DiscountEngine } from './discount.engine';
     DteXmlEngine,
     SiiAuthTokenService,
     SiiXsdValidator,
-    DteXmlBuilder,
     PdfGenerator,
     TenantConfigService,
   ],

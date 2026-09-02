@@ -10,7 +10,6 @@ import {
 import { SignatureEngine } from '../../infrastructure/framework/sii/signature.engine';
 import { CAFEngine } from '../../infrastructure/framework/sii/caf.engine';
 import { SiiSoapClient } from '../../infrastructure/framework/sii/sii-soap.client';
-import { DteXmlBuilder } from '../../infrastructure/framework/sii/dte-xml.builder';
 import { CertificateUtils } from '../../infrastructure/framework/sii/certificate.utils';
 import { SiiAuthTokenService } from '../../infrastructure/framework/sii/sii-auth-token.service';
 import { DteXmlEngine } from '../../infrastructure/framework/sii/dte-xml.engine';
@@ -26,7 +25,6 @@ export class EmitDteUseCase {
     private readonly signatureEngine: SignatureEngine,
     private readonly cafEngine: CAFEngine,
     private readonly siiSoapClient: SiiSoapClient,
-    private readonly dteXmlBuilder: DteXmlBuilder,
     private readonly siiAuthTokenService: SiiAuthTokenService,
     private readonly dteXmlEngine: DteXmlEngine,
     private readonly tenantConfigService: TenantConfigService,
@@ -219,7 +217,7 @@ export class EmitDteUseCase {
     userAgent?: string,
     simulatedUser?: any
   ): Observable<any> {
-    this.logger.log(`Transmitiendo DTE ID ${dteId} al Sandbox del SII...`);
+    this.logger.log(`Transmitiendo DTE ID ${dteId} al SII...`);
 
     return from(this.dataServices.dteDocument.get(dteId)).pipe(
       switchMap((savedDte) => {
@@ -290,13 +288,14 @@ export class EmitDteUseCase {
                   envelopeId
                 );
 
-                this.logger.log('Obteniendo token SII con cache de 11 horas...');
+                this.logger.log('Obteniendo token SII (cache 110 min, ISSUE-013)...');
                 return from(this.siiAuthTokenService.getToken(tenantId, {
                   pfxBase64: certificatePfxBase64,
                   password: certPassword,
                 })).pipe(
                   switchMap((sessionToken) => {
-                    this.logger.log(`Token de Sesión obtenido con éxito: ${sessionToken}`);
+                    // El token SII es una credencial temporal: nunca se registra ni se persiste.
+                    this.logger.log('Token de sesión SII obtenido correctamente.');
 
                     return this.siiSoapClient.sendDteEnvelope(signedEnvelopeXml, sessionToken).pipe(
                       switchMap((submissionResult) => {
@@ -317,7 +316,7 @@ export class EmitDteUseCase {
                             status: 'ENVIADO',
                             timestamp: new Date(),
                             user: operator,
-                            detail: `Sobre DTE enviado exitosamente al Sandbox SII. TrackID: ${trackId}`
+                            detail: `Sobre DTE enviado exitosamente al SII. TrackID: ${trackId}`
                           }
                         ];
 
@@ -333,7 +332,6 @@ export class EmitDteUseCase {
                           type: savedDte.type, 
                           amount: savedDte.amount, 
                           trackId, 
-                          tokenUsed: sessionToken,
                           repRut: representativeRut,
                           operatorName: operator,
                           operatorRut: simulatedUser?.rut || '17.842.102-5',
@@ -347,7 +345,7 @@ export class EmitDteUseCase {
                         }).pipe(
                           map(() => ({
                             success: true,
-                            message: `DTE Folio ${savedDte.folio} emitido, firmado criptográficamente, autenticado vía SOAP y enviado al Sandbox SII exitosamente.`,
+                            message: `DTE Folio ${savedDte.folio} emitido, firmado criptográficamente, autenticado y enviado al SII exitosamente.`,
                             dteId: savedDte.id,
                             folio: savedDte.folio,
                             type: savedDte.type,
@@ -370,7 +368,7 @@ export class EmitDteUseCase {
                           }
                         ];
                         return from(this.dataServices.dteDocument.update(savedDte.id!, savedDte)).pipe(
-                          switchMap(() => throwError(() => new Error(`Rechazo del Sandbox SII: ${transmissionError.message}`)))
+                          switchMap(() => throwError(() => new Error(`Rechazo del SII: ${transmissionError.message}`)))
                         );
                       })
                     );

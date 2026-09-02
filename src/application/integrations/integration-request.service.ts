@@ -7,6 +7,7 @@ import { IntegrationApiException } from './integration-api.exception';
 import { IntegrationErrorCode } from './integration-errors';
 import { mapDteStatusToPublic } from './integration-state.service';
 import { createHash } from 'crypto';
+import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
 
 export type IntegrationRequestKind = 'dte' | 'credit-note' | 'debit-note' | 'rcof';
 
@@ -37,6 +38,7 @@ export class IntegrationRequestService {
   constructor(
     private readonly dataServices: IDataServices,
     private readonly dteXmlEngine: DteXmlEngine,
+    private readonly metrics?: PrometheusService,
   ) {}
 
   static hashBody(rawBody: string | Buffer): string {
@@ -101,6 +103,7 @@ export class IntegrationRequestService {
     this.logger.log(
       `Solicitud ${request.id} (${input.kind}) encolada para tenant ${input.tenantId}`,
     );
+    this.metrics?.integrationRequestsTotal.inc({ kind: input.kind, result: 'queued' });
     return { request, replayed: false };
   }
 
@@ -171,11 +174,11 @@ export class IntegrationRequestService {
       submittedAt: request.submittedAt ?? null,
       finalizedAt: request.finalizedAt ?? null,
       _links: {
-        self: `/api/v1/integrations/dte/${request.id}`,
+        self: `/api/v1/dtes/${request.id}`,
         ...(dte
           ? {
-              xml: `/api/v1/integrations/dte/${dte.id}/xml`,
-              pdf: `/api/v1/integrations/dte/${dte.id}/pdf`,
+              xml: `/api/v1/dtes/${dte.id}/xml`,
+              pdf: `/api/v1/dtes/${dte.id}/pdf`,
             }
           : {}),
       },

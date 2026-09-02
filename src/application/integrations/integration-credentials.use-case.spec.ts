@@ -1,6 +1,7 @@
 // backend/src/application/integrations/integration-credentials.use-case.spec.ts
 import { IntegrationCredentialsUseCase } from './integration-credentials.use-case';
 import { IntegrationSignatureUtil } from '../../infrastructure/framework/integrations/integration-signature.util';
+import { Aes256Cipher } from '../../infrastructure/framework/crypto/aes-256-cipher';
 import { MemoryGenericRepository } from '../../infrastructure/framework/memory/memory-generic-repository';
 import {
   IntegrationCredentialEntity,
@@ -23,10 +24,11 @@ describe('IntegrationCredentialsUseCase — ciclo de vida de credenciales B2B', 
 
   beforeEach(() => {
     dataServices = buildDataServices();
-    useCase = new IntegrationCredentialsUseCase(dataServices);
+    useCase = new IntegrationCredentialsUseCase(dataServices, new Aes256Cipher());
   });
 
-  it('crea credencial: secreto una sola vez, sólo el hash persiste', async () => {
+  it('crea credencial: secreto una sola vez, hash y secreto cifrado persisten', async () => {
+    process.env.SII_MASTER_KEY = 'k'.repeat(32);
     const result = await useCase.create(tenantId, {
       name: 'CMORAPR',
       permissions: ['dte:emit', 'dte:read'],
@@ -41,6 +43,18 @@ describe('IntegrationCredentialsUseCase — ciclo de vida de credenciales B2B', 
     expect(stored.secretHash).not.toContain(result.secret);
     expect(stored.permissions).toEqual(['dte:emit', 'dte:read']);
     expect(stored.status).toBe('active');
+
+    // El secreto cifrado no contiene el secreto en claro y descifra al original.
+    expect(JSON.stringify(stored.secretEncrypted)).not.toContain(result.secret);
+    const decrypted = new Aes256Cipher().decrypt(
+      stored.secretEncrypted.ciphertext,
+      process.env.SII_MASTER_KEY!,
+      stored.secretEncrypted.iv,
+      stored.secretEncrypted.authTag,
+      stored.secretEncrypted.salt,
+    );
+    expect(decrypted).toBe(result.secret);
+    delete process.env.SII_MASTER_KEY;
   });
 
   it('rechaza permisos inválidos y nombre vacío', async () => {

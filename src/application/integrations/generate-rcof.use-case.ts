@@ -266,8 +266,10 @@ export class GenerateRcofUseCase {
       senderRut = '12345678-9';
     }
 
-    const taxProfile = await this.tenantConfigService.requireTaxProfileForRealEmission(tenantId).catch(() => null);
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId).catch(() => null);
+    // En modo real, una configuración tributaria inválida debe bloquear el RCOF.
+    // No se degrada silenciosamente a valores por defecto.
+    const taxProfile = await this.tenantConfigService.requireTaxProfileForRealEmission(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
 
     const envelope = this.dteXmlEngine.buildEnvioBoleta({
       issuerRut: tenant!.rut,

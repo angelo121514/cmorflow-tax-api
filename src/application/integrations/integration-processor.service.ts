@@ -172,20 +172,7 @@ export class IntegrationProcessorService {
    */
   async pollSubmitted(limit: number = BATCH_SIZE * 4): Promise<{ polled: number; finalized: number }> {
     let finalized = 0;
-    const tenants = new Map<string, IntegrationRequestEntity[]>();
-
-    await this.cls.run({} as any, async () => {
-      const submitted = await firstValueFrom(
-        this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
-      );
-      for (const request of submitted.slice(0, limit * 4)) {
-        const list = tenants.get(request.tenantId) || [];
-        if (list.length < limit) {
-          list.push(request);
-          tenants.set(request.tenantId, list);
-        }
-      }
-    });
+    const tenants = await this.submittedRequestsByTenant(limit, false);
 
     let polled = 0;
     for (const [tenantId, requests] of tenants) {
@@ -229,23 +216,7 @@ export class IntegrationProcessorService {
   async pollRcofSubmitted(limit = 10): Promise<{ polled: number; finalized: number }> {
     let polled = 0;
     let finalized = 0;
-    const requestsByTenant = new Map<string, any[]>();
-
-    await this.cls.run({} as any, async () => {
-      const submitted = await firstValueFrom(
-        this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
-      );
-      for (const request of submitted) {
-        if (request.kind !== 'rcof' || !request.rcofId) {
-          continue;
-        }
-        const list = requestsByTenant.get(request.tenantId) || [];
-        if (list.length < limit) {
-          list.push(request);
-          requestsByTenant.set(request.tenantId, list);
-        }
-      }
-    });
+    const requestsByTenant = await this.submittedRequestsByTenant(limit, true);
 
     for (const [tenantId, requests] of requestsByTenant) {
       for (const request of requests) {
@@ -275,6 +246,46 @@ export class IntegrationProcessorService {
       }
     }
     return { polled, finalized };
+  }
+
+  private async submittedRequestsByTenant(
+    limit: number,
+    rcofOnly: boolean,
+  ): Promise<Map<string, IntegrationRequestEntity[]>> {
+    const grouped = new Map<string, IntegrationRequestEntity[]>();
+    const tenants = this.dataServices.tenant?.getAll
+      ? await firstValueFrom(this.dataServices.tenant.getAll())
+      : [];
+    if (tenants.length === 0) {
+      // In-memory unit tests do not provide the global tenant repository.
+      const submitted = await firstValueFrom(
+        this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
+      );
+      for (const request of submitted) this.addSubmitted(grouped, request, limit, rcofOnly);
+      return grouped;
+    }
+    for (const tenant of tenants) {
+      await this.cls.run({} as any, async () => {
+        this.cls.set('tenantId', tenant.id!);
+        const submitted = await firstValueFrom(
+          this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
+        );
+        for (const request of submitted) this.addSubmitted(grouped, request, limit, rcofOnly);
+      });
+    }
+    return grouped;
+  }
+
+  private addSubmitted(
+    grouped: Map<string, IntegrationRequestEntity[]>, request: IntegrationRequestEntity,
+    limit: number, rcofOnly: boolean,
+  ): void {
+    if (rcofOnly && (request.kind !== 'rcof' || !request.rcofId)) return;
+    const list = grouped.get(request.tenantId) || [];
+    if (list.length < limit) {
+      list.push(request);
+      grouped.set(request.tenantId, list);
+    }
   }
 
   /** Reconstruye el EmitDteDto validado desde el payload persistido. */
