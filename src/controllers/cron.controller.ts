@@ -1,6 +1,6 @@
 // src/controllers/cron.controller.ts
 import { Controller, Post, HttpCode, HttpStatus, UseGuards, Logger } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiExtension } from '@nestjs/swagger';
 import { Public } from '../infrastructure/decorators/public.decorator';
 import { ClsService } from 'nestjs-cls';
 import { IntegrationOrchestratorService } from '../application/integrations/integration-orchestrator.service';
@@ -35,6 +35,7 @@ export class CronController {
   }
 
   @Post('process-integrations')
+  @ApiExtension('x-auth-type', 'cron')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reconciler: cola + polling SII + webhooks + purge (cada 5 min)' })
   async processIntegrations() {
@@ -42,6 +43,7 @@ export class CronController {
   }
 
   @Post('deliver-webhooks')
+  @ApiExtension('x-auth-type', 'cron')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Entrega de webhooks vencidos (cada 2 min)' })
   async deliverWebhooks() {
@@ -49,6 +51,7 @@ export class CronController {
   }
 
   @Post('rcof-daily')
+  @ApiExtension('x-auth-type', 'cron')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'RCOF diario automático por tenant (zona America/Santiago)' })
   async rcofDaily() {

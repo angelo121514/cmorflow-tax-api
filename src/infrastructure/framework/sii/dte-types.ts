@@ -21,13 +21,13 @@ export interface DteLineItem {
   exempt?: boolean;
   /**
    * Descuento por línea en porcentaje (0-100).
-   * Genera el nodo <DscItem>/<DescuentoPct> del XML del DTE.
+   * Genera el nodo directo <DescuentoPct> del XML del DTE.
    * Caso 2 del Set de Pruebas SII.
    */
   discountPercentage?: number;
   /**
    * Descuento por línea en monto fijo (CLP).
-   * Genera el nodo <DscItem>/<DescuentoMonto> del XML del DTE.
+   * Genera el nodo directo <DescuentoMonto> del XML del DTE.
    * Alternativa a discountPercentage.
    */
   discountAmount?: number;
@@ -60,7 +60,7 @@ export interface DteBuildInput {
   indTraslado?: number;
   /**
    * Descuento global aplicable a los ítems afectos (no exentos).
-   * Genera el nodo <DscRcgloGlobal> con tipo "D" (descuento) en el bloque <Totales>.
+   * Genera <DscRcgGlobal> con tipo "D" y unidad porcentual a nivel de Documento.
    * Caso 4 del Set de Pruebas SII.
    */
   globalDiscountPercentage?: number;
@@ -110,7 +110,7 @@ export interface DteTotals {
   totalAmount: number;
   /**
    * Monto del descuento global aplicado a los ítems afectos (no exentos).
-   * Genera el nodo <DscRcgloGlobal><ValorCF> en el XML.
+   * Se calcula desde el porcentaje informado y se refleja en los totales.
    * Solo presente cuando se aplicó descuento global.
    */
   globalDiscountAmount?: number;

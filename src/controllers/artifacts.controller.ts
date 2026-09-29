@@ -1,6 +1,6 @@
 // src/controllers/artifacts.controller.ts
 import { Controller, Get, Param, Res } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiExtension } from '@nestjs/swagger';
 import { ClsService } from 'nestjs-cls';
 import { Response } from 'express';
 import { Public } from '../infrastructure/decorators/public.decorator';
@@ -16,6 +16,7 @@ export class ArtifactsController {
 
   @Get(':token')
   @Public()
+  @ApiExtension('x-auth-type', 'signed-token')
   @ApiOperation({ summary: 'Descargar artefacto con URL firmada (sin headers HMAC)' })
   async download(@Param('token') token: string, @Res() res: Response) {
     const payload = this.artifactsService.verifySignedUrl(token);

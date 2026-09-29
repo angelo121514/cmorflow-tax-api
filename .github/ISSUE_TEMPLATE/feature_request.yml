@@ -1,0 +1,28 @@
+name: Proponer una mejora
+description: Un problema y criterios observables para una nueva mejora.
+title: "[Propuesta] "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema y usuarios afectados
+    validations:
+      required: true
+  - type: input
+    id: feature
+    attributes:
+      label: Feature F-xx relacionada
+      description: "Consulta docs/spec/SPEC_INDEX.md; si es una función nueva, indícalo."
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Resultado y criterios de aceptación
+      description: "Describe qué debería poder observarse después del cambio."
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Contrato, compatibilidad y decisiones pendientes
+      description: "Indica si afecta HTTP, permisos, migraciones o reglas tributarias."

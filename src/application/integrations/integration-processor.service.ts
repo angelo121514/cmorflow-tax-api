@@ -85,7 +85,7 @@ export class IntegrationProcessorService {
     try {
       const emitDto = this.rebuildEmitDto(fresh);
       const dte = await firstValueFrom(
-        this.emitDteUseCase.prepare(emitDto, fresh.tenantId, this.operatorId(fresh)),
+        this.emitDteUseCase.prepare(emitDto, fresh.tenantId),
       );
       const withDte = await firstValueFrom(
         this.dataServices.integrationRequest.update(fresh.id!, { dteId: dte.id } as any),
@@ -104,14 +104,24 @@ export class IntegrationProcessorService {
         date: fresh.payload?.date,
         sequenceNumber: fresh.payload?.sequenceNumber,
       });
-      await firstValueFrom(
+      const withRcof = await firstValueFrom(
         this.dataServices.integrationRequest.update(fresh.id!, { rcofId: rcof.id } as any),
       );
-      return this.stateService.applyState(
-        fresh,
+      if (!rcof.trackId) return this.handleProcessingError(fresh, new Error('RCOF sin TrackID tras la transmisión.'));
+      const submitted = await this.stateService.applyState(
+        withRcof!,
         'submitted',
-        `RCOF generado y transmitido. TrackID: ${rcof.trackId ?? 'n/a'}`,
+        `RCOF generado y transmitido. TrackID: ${rcof.trackId}`,
+        { trackId: rcof.trackId },
       );
+      if (['accepted', 'observed', 'rejected'].includes(rcof.status)) {
+        return this.stateService.applyState(
+          submitted,
+          rcof.status as any,
+          `Estado SII recuperado al reintentar RCOF: ${rcof.status}`,
+        );
+      }
+      return submitted;
     } catch (err) {
       if (err instanceof IntegrationApiException && err.getStatus() === 422) {
         // Fallo de validación definitivo (p. ej. sin boletas ese día).
@@ -130,7 +140,10 @@ export class IntegrationProcessorService {
     const mapped = mapDteStatusToPublic(dte.status);
     if (mapped && ['accepted', 'observed', 'rejected', 'cancelled'].includes(mapped)) {
       // El polling ya resolvió el ciclo; consolidar estado público.
-      return this.stateService.applyState(fresh, mapped as any, `Estado SII: ${dte.status}`);
+      const submitted = fresh.state === 'processing'
+        ? await this.stateService.applyState(fresh, 'submitted', `DTE ya transmitido. TrackID: ${dte.trackId ?? 'n/a'}`)
+        : fresh;
+      return this.stateService.applyState(submitted, mapped as any, `Estado SII: ${dte.status}`);
     }
     return this.transmit(fresh, dte.id!);
   }
@@ -138,7 +151,7 @@ export class IntegrationProcessorService {
   private async transmit(fresh: IntegrationRequestEntity, dteId: string): Promise<any> {
     try {
       const result = await firstValueFrom(
-        this.emitDteUseCase.transmit(dteId, fresh.tenantId, this.operatorId(fresh)),
+        this.emitDteUseCase.transmit(dteId, fresh.tenantId, undefined, undefined, undefined, undefined, fresh.originCredentialId ?? undefined),
       );
       return this.stateService.applyState(
         fresh,
@@ -172,7 +185,7 @@ export class IntegrationProcessorService {
    */
   async pollSubmitted(limit: number = BATCH_SIZE * 4): Promise<{ polled: number; finalized: number }> {
     let finalized = 0;
-    const tenants = await this.submittedRequestsByTenant(limit, false);
+    const tenants = await this.requestsByTenant(limit, false, ['submitted', 'observed']);
 
     let polled = 0;
     for (const [tenantId, requests] of tenants) {
@@ -194,12 +207,13 @@ export class IntegrationProcessorService {
             const refreshed = await firstValueFrom(this.dataServices.dteDocument.get(dte.id!));
             const mapped = mapDteStatusToPublic(refreshed?.status);
             if (mapped && ['accepted', 'observed', 'rejected', 'cancelled'].includes(mapped)) {
+              const changed = request.state !== mapped;
               await this.stateService.applyState(
                 request,
                 mapped as any,
                 `SII responde ${refreshed!.status} para TrackID ${dte.trackId}`,
               );
-              finalized++;
+              if (changed && ['accepted', 'rejected'].includes(mapped)) finalized++;
             }
           } catch (err) {
             this.logger.warn(
@@ -216,7 +230,7 @@ export class IntegrationProcessorService {
   async pollRcofSubmitted(limit = 10): Promise<{ polled: number; finalized: number }> {
     let polled = 0;
     let finalized = 0;
-    const requestsByTenant = await this.submittedRequestsByTenant(limit, true);
+    const requestsByTenant = await this.requestsByTenant(limit, true, ['submitted', 'observed']);
 
     for (const [tenantId, requests] of requestsByTenant) {
       for (const request of requests) {
@@ -227,17 +241,25 @@ export class IntegrationProcessorService {
             const rcof = await firstValueFrom(
               this.dataServices.rcofSubmission.get(request.rcofId!),
             );
-            if (!rcof || rcof.status !== 'submitted') {
+            if (!rcof) {
               return;
             }
-            const updated = await this.generateRcofUseCase.pollStatus(tenantId, rcof);
+            // El resultado puede estar guardado aunque una caída impidiera
+            // consolidar la request. Recuperarlo sin volver a enviar al SII.
+            const updated = ['accepted', 'rejected'].includes(rcof.status)
+              ? rcof
+              : ['submitted', 'observed'].includes(rcof.status)
+                ? await this.generateRcofUseCase.pollStatus(tenantId, rcof)
+                : null;
+            if (!updated) return;
             if (['accepted', 'observed', 'rejected'].includes(updated.status)) {
+              const changed = request.state !== updated.status;
               await this.stateService.applyState(
                 request,
                 updated.status as any,
                 `SII responde ${updated.status} para RCOF ${rcof.periodDate}/${rcof.sequence}`,
               );
-              finalized++;
+              if (changed && ['accepted', 'rejected'].includes(updated.status)) finalized++;
             }
           } catch (err) {
             this.logger.warn(`Poll de RCOF ${request.id} falló: ${(err as Error).message}`);
@@ -248,9 +270,10 @@ export class IntegrationProcessorService {
     return { polled, finalized };
   }
 
-  private async submittedRequestsByTenant(
+  private async requestsByTenant(
     limit: number,
     rcofOnly: boolean,
+    states: Array<'submitted' | 'observed'>,
   ): Promise<Map<string, IntegrationRequestEntity[]>> {
     const grouped = new Map<string, IntegrationRequestEntity[]>();
     const tenants = this.dataServices.tenant?.getAll
@@ -258,29 +281,34 @@ export class IntegrationProcessorService {
       : [];
     if (tenants.length === 0) {
       // In-memory unit tests do not provide the global tenant repository.
-      const submitted = await firstValueFrom(
-        this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
+      const requests = await firstValueFrom(
+        this.dataServices.integrationRequest.find({ where: {} } as any),
       );
-      for (const request of submitted) this.addSubmitted(grouped, request, limit, rcofOnly);
+      for (const request of requests) {
+        if (states.includes(request.state as any)) this.addRequest(grouped, request, limit, rcofOnly);
+      }
       return grouped;
     }
     for (const tenant of tenants) {
       await this.cls.run({} as any, async () => {
         this.cls.set('tenantId', tenant.id!);
-        const submitted = await firstValueFrom(
-          this.dataServices.integrationRequest.find({ where: { state: 'submitted' } } as any),
-        );
-        for (const request of submitted) this.addSubmitted(grouped, request, limit, rcofOnly);
+        for (const state of states) {
+          const requests = await firstValueFrom(
+            this.dataServices.integrationRequest.find({ where: { state } } as any),
+          );
+          for (const request of requests) this.addRequest(grouped, request, limit, rcofOnly);
+        }
       });
     }
     return grouped;
   }
 
-  private addSubmitted(
+  private addRequest(
     grouped: Map<string, IntegrationRequestEntity[]>, request: IntegrationRequestEntity,
     limit: number, rcofOnly: boolean,
   ): void {
     if (rcofOnly && (request.kind !== 'rcof' || !request.rcofId)) return;
+    if (!rcofOnly && request.kind === 'rcof') return;
     const list = grouped.get(request.tenantId) || [];
     if (list.length < limit) {
       list.push(request);
@@ -318,7 +346,4 @@ export class IntegrationProcessorService {
     };
   }
 
-  private operatorId(request: IntegrationRequestEntity): string {
-    return `integration:${request.originCredentialId}`;
-  }
 }

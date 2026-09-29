@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as forge from 'node-forge';
+import { DOMParser } from '@xmldom/xmldom';
+import { SignedXml } from 'xml-crypto';
 
 @Injectable()
 export class SiiMockSoap {
@@ -135,6 +137,15 @@ export class SiiMockSoap {
     }
   }
 
+  /** Simula el canal separado de Consumo de Folios; RCOF no es un EnvioBOLETA. */
+  public receiveRcof(signedRcofXml: string, token: string): { success: boolean; trackId?: string; errorMsg?: string } {
+    if (!token?.startsWith('MOCK_SII_TOKEN_')) return { success: false, errorMsg: 'Token de sesión inválido.' };
+    if (!/<ConsumoFolio\b/i.test(signedRcofXml) || !/<DocumentoConsumoFolio\b[^>]*\bID=/i.test(signedRcofXml) || !/<Signature\b[\s\S]*?<\/Signature>/i.test(signedRcofXml)) {
+      return { success: false, errorMsg: 'RCOF sin estructura o firma XMLDSig válida.' };
+    }
+    return { success: true, trackId: `R${Math.floor(100000000 + Math.random() * 900000000)}` };
+  }
+
   /**
    * Validador criptográfico genérico para firmas XMLDSig.
    * Extrae la clave pública RSA (Modulus/Exponent) del XML, canonicaliza el bloque
@@ -142,47 +153,22 @@ export class SiiMockSoap {
    */
   private verifyXmlSignature(xml: string, targetId: string): boolean {
     try {
-      // 1. Extraer Modulus y Exponent
-      const modulusMatch = /<Modulus>([^<]+)<\/Modulus>/.exec(xml);
-      const exponentMatch = /<Exponent>([^<]+)<\/Exponent>/.exec(xml);
-      const signatureValueMatch = /<SignatureValue>([^<]+)<\/SignatureValue>/.exec(xml);
-
-      if (!modulusMatch || !exponentMatch || !signatureValueMatch) {
-        this.logger.error('[MOCK CRYPTO] Error de firma: No se encontraron los elementos RSA del bloque KeyInfo.');
-        return false;
+      const document = new DOMParser().parseFromString(xml, 'text/xml');
+      const signatures = document.getElementsByTagNameNS('http://www.w3.org/2000/09/xmldsig#', 'Signature');
+      let signature: any;
+      for (let index = 0; index < signatures.length; index++) {
+        const candidate: any = signatures.item(index);
+        if (candidate?.toString().includes(`URI="#${targetId}"`)) {
+          signature = candidate;
+          break;
+        }
       }
-
-      const modulusB64 = modulusMatch[1].trim();
-      const exponentB64 = exponentMatch[1].trim();
-      const signatureValueB64 = signatureValueMatch[1].trim();
-
-      // 2. Extraer el bloque <SignedInfo>
-      const signedInfoMatch = /(<SignedInfo>[\s\S]*?<\/SignedInfo>)/.exec(xml);
-      if (!signedInfoMatch) {
-        this.logger.error('[MOCK CRYPTO] Error de firma: No se encontró el bloque <SignedInfo>.');
-        return false;
-      }
-      const rawSignedInfo = signedInfoMatch[1];
-      const canonicalSignedInfo = this.canonicalizeXml(rawSignedInfo);
-
-      // 3. Reconstruir la Clave Pública RSA en node-forge
-      const modulusBytes = forge.util.decode64(modulusB64);
-      const exponentBytes = forge.util.decode64(exponentB64);
-      
-      const modulusHex = forge.util.bytesToHex(modulusBytes);
-      const exponentHex = forge.util.bytesToHex(exponentBytes);
-
-      const modulusBigInt = new forge.jsbn.BigInteger(modulusHex, 16);
-      const exponentBigInt = new forge.jsbn.BigInteger(exponentHex, 16);
-
-      const publicKey = forge.pki.setRsaPublicKey(modulusBigInt, exponentBigInt);
-
-      // 4. Decodificar firma y verificar contra el hash SHA-1 de <SignedInfo>
-      const signatureBytes = forge.util.decode64(signatureValueB64);
-      const md = forge.md.sha1.create();
-      md.update(canonicalSignedInfo, 'utf8');
-
-      const verified = publicKey.verify(md.digest().getBytes(), signatureBytes);
+      const certificate = signature?.getElementsByTagNameNS('http://www.w3.org/2000/09/xmldsig#', 'X509Certificate').item(0)?.textContent?.replace(/\s/g, '');
+      if (!signature || !certificate) return false;
+      const pem = `-----BEGIN CERTIFICATE-----\n${certificate}\n-----END CERTIFICATE-----`;
+      const verifier = new SignedXml({ publicCert: pem, getCertFromKeyInfo: () => null });
+      verifier.loadSignature(signature);
+      const verified = verifier.checkSignature(xml);
       this.logger.log(`[MOCK CRYPTO] Verificación criptográfica XMLDSig para ID "${targetId}": ${verified ? 'VÁLIDA' : 'INVÁLIDA'}`);
       
       return verified;
@@ -192,16 +178,4 @@ export class SiiMockSoap {
     }
   }
 
-  /**
-   * Canonicalización idéntica a la utilizada en el SignatureEngine
-   */
-  private canonicalizeXml(xml: string): string {
-    return xml
-      .replace(/[\r\n]/g, '')
-      .replace(/>\s+</g, '><')
-      .replace(/\s+/g, ' ')
-      .replace(/\s*\/>/g, '/>')
-      .replace(/='([^']*)'/g, '="$1"')
-      .trim();
-  }
 }

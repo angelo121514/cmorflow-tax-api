@@ -6,10 +6,9 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
  *
  * ## Contrato de firma
  *
- * Clave de firma: `sha256hex(secreto)` — el cliente deriva su secreto
- * (mostrado una sola vez, prefijo `cmc_…`) con SHA-256 y usa ese hex como
- * clave HMAC. El servidor persiste únicamente ese mismo hash, por lo que
- * puede verificar sin conocer el secreto en claro.
+ * Clave de firma v2: el secreto original mostrado una sola vez (`cmc_…`). El
+ * servidor lo cifra en reposo con AES-256-GCM y lo descifra sólo durante la
+ * verificación. v1, mantenida para claves existentes, usa SHA-256(secret).
  *
  * String canónico firmado (HMAC-SHA256 hex):
  *
@@ -49,9 +48,8 @@ export class IntegrationSignatureUtil {
   }
 
   /**
-   * HMAC-SHA256 hex del string canónico usando `sha256hex(secreto)` como
-   * clave. `signingKey` debe ser el SHA-256 hex del secreto (cliente) o el
-   * `secretHash` persistido (servidor) — son el mismo valor.
+   * HMAC-SHA256 hex del string canónico. Para v2, signingKey es el secreto
+   * original; la derivación SHA-256 se conserva únicamente para v1.
    */
   static sign(signingKey: string, canonical: string): string {
     return createHmac('sha256', signingKey).update(canonical).digest('hex');

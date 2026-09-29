@@ -69,6 +69,8 @@ export interface TenantConfig {
   /** Fase 4: opt-in de features IA. Off por defecto. */
   aiEnabled?: boolean;
   aiOptInDate?: string;
+  /** Perfil visual inmutable que se fijará en los DTE emitidos desde ahora. */
+  activeBrandProfileId?: string;
 }
 
 @Injectable()
@@ -122,7 +124,10 @@ export class TenantConfigService {
     // 1. Verificar cache
     const cached = this.configCache.get(tenantId);
     if (cached && cached.expires > Date.now()) {
-      return cached.data;
+      // Nunca entregar la referencia almacenada: los métodos de configuración
+      // la modifican antes de persistir y una referencia mutable convertiría el
+      // caché en una escritura implícita y potencialmente obsoleta.
+      return structuredClone(cached.data);
     }
 
     // 2. Consultar BD
@@ -133,8 +138,8 @@ export class TenantConfigService {
       const config: TenantConfig = !record ? { cafs: [] } : (record.configJson as TenantConfig);
 
       // 3. Actualizar cache
-      this.configCache.set(tenantId, { data: config, expires: Date.now() + this.CONFIG_TTL_MS });
-      return config;
+      this.configCache.set(tenantId, { data: structuredClone(config), expires: Date.now() + this.CONFIG_TTL_MS });
+      return structuredClone(config);
     } catch (error) {
       this.logger.error(`Error leyendo configuración del tenant ${tenantId}:`, error);
       return { cafs: [] };
@@ -158,14 +163,82 @@ export class TenantConfigService {
   }
 
   /**
+   * Cambia el perfil visual activo para emisiones futuras. El perfil concreto
+   * se almacena en el DTE al firmarlo, por lo que esta referencia no altera
+   * documentos ya emitidos.
+   */
+  public async setActiveBrandProfileId(tenantId: string, profileId: string): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(profileId)) {
+      throw new BadRequestException('El identificador del perfil visual no es válido.');
+    }
+    // Esta mutación comparte tenant_configs.config_json con el contador de
+    // folios. Lee la fila fresca y toma el mismo lock que reserveFolioAtomic,
+    // para no reescribir un lastUsedFolio recién reservado desde un caché.
+    await this.configRepo.manager.transaction(async (manager) => {
+      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      const repository = manager.getRepository(TenantConfigEntity);
+      const record = await repository.findOne({
+        where: { tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (record) {
+        const freshConfig = record.configJson as TenantConfig;
+        freshConfig.activeBrandProfileId = profileId;
+        record.configJson = freshConfig as any;
+        await repository.save(record);
+      } else {
+        await repository.save(repository.create({
+          tenantId,
+          configJson: { cafs: [], activeBrandProfileId: profileId },
+        }));
+      }
+    });
+    this.invalidateCache(tenantId);
+  }
+
+  /**
+   * Lee el perfil activo directamente de PostgreSQL para la emisión. El web y
+   * worker tienen cachés separados, por lo que el snapshot de un DTE no debe
+   * depender de un TTL local.
+   */
+  public async getActiveBrandProfileIdForEmission(tenantId: string): Promise<string | null> {
+    const record = await this.withTenantRepository(tenantId, (repository) =>
+      repository.findOne({ where: { tenantId } }),
+    );
+    const activeBrandProfileId = (record?.configJson as TenantConfig | undefined)?.activeBrandProfileId;
+    return typeof activeBrandProfileId === 'string' && activeBrandProfileId.trim().length > 0
+      ? activeBrandProfileId.trim()
+      : null;
+  }
+
+  /**
    * Guarda la configuración completa de un tenant en PostgreSQL (upsert).
    * Invalida el cache después de guardar.
    */
   private async saveConfig(tenantId: string, config: TenantConfig): Promise<void> {
     await this.withTenantRepository(tenantId, async (repository) => {
-      const existing = await repository.findOne({ where: { tenantId } });
+      // Las operaciones administrativas parten de una copia que puede haber
+      // quedado en caché. Tomar el lock y releer la fila evita que esa copia
+      // borre el perfil visual seleccionado por otra petición mientras se
+      // actualizaba, por ejemplo, un CAF o la firma.
+      const existing = await repository.findOne({
+        where: { tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (existing) {
-        existing.configJson = config as any;
+        const freshConfig = existing.configJson as TenantConfig;
+        const configToSave: TenantConfig = { ...config };
+
+        // Sólo setActiveBrandProfileId puede modificar esta referencia. Las
+        // demás escrituras preservan siempre la versión que estaba fijada en
+        // la fila bloqueada, incluso si su copia de caché era anterior.
+        if (freshConfig.activeBrandProfileId === undefined) {
+          delete configToSave.activeBrandProfileId;
+        } else {
+          configToSave.activeBrandProfileId = freshConfig.activeBrandProfileId;
+        }
+
+        existing.configJson = configToSave as any;
         await repository.save(existing);
       } else {
         await repository.save(repository.create({ tenantId, configJson: config as any }));
@@ -683,7 +756,10 @@ export class TenantConfigService {
    * Si no (ej. en pruebas unitarias), usa el fallback no-transaccional.
    */
   public async reserveFolioAtomic(tenantId: string, dteType: number): Promise<number> {
-    return await this.configRepo.manager.transaction(async (transactionalEntityManager) => {
+    const folio = await this.configRepo.manager.transaction(async (transactionalEntityManager) => {
+      // RLS también debe estar fijado dentro de esta transacción: el lock y
+      // la escritura no pueden depender del contexto CLS de otra conexión.
+      await transactionalEntityManager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
       // 1. Obtener la fila con un bloqueo de escritura pesimista
       const record = await transactionalEntityManager.findOne(TenantConfigEntity, {
         where: { tenantId },
@@ -732,6 +808,10 @@ export class TenantConfigService {
       this.logger.log(`Folio ${nextFolio} reservado atómicamente para Tenant ${tenantId}, Tipo DTE ${dteType}`);
       return nextFolio;
     });
+    // La reserva escribe config_json directamente; invalidar sólo la cache de
+    // configuración evita que una mutación posterior reutilice un CAF obsoleto.
+    this.configCache.delete(tenantId);
+    return folio;
     // ISSUE-009: el fallback no-transaccional fue eliminado. Si la transacción
     // falla (deadlock, timeout de BD), el error propaga y la emisión falla
     // limpio — es preferible a duplicar folios por una reserva sin lock.

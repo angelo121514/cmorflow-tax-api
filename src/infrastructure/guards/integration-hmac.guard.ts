@@ -26,7 +26,7 @@ import { DEFAULT_SII_MASTER_KEY } from '../framework/sii/sii-defaults.constant';
  * - X-Nonce: valor único por credencial dentro de la ventana (antireplay).
  * - X-Signature: HMAC-SHA256 hex del string canónico
  *   METHOD\nruta?query\nsha256(body)\ntimestamp\nnonce, con clave
- *   sha256hex(secreto) — ver IntegrationSignatureUtil.
+ *   secreto original para credenciales v2 — ver IntegrationSignatureUtil.
  *
  * El tenant se resuelve EXCLUSIVAMENTE desde la credencial (fail-closed):
  * un x-tenant-id del cliente que no coincida se rechaza con 403, y el
@@ -49,12 +49,18 @@ export class IntegrationHmacGuard implements CanActivate {
   ) {}
 
   /**
-   * Clave de firma HMAC. Credenciales nuevas: secreto cifrado con
-   * SII_MASTER_KEY → se descifra y se hashea (un dump de BD no sirve para
-   * firmar). Credenciales previas a la migración (sólo secretHash): path
-   * legacy hasta su rotación.
+   * La v2 descifra el secreto sólo en memoria y lo usa directamente como clave
+   * HMAC. La v1 preserva temporalmente el protocolo heredado basado en hash,
+   * para no romper integradores antes de que roten su credencial.
    */
-  private resolveSigningKey(credential: { secretHash: string; secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null }): string {
+  private resolveSigningKey(credential: { secretHash: string; signingVersion?: 'v1' | 'v2'; secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null }): string {
+    if (credential.signingVersion === 'v2' && !credential.secretEncrypted) {
+      throw new IntegrationApiException(
+        IntegrationErrorCode.INVALID_SIGNATURE,
+        'La credencial v2 no dispone de un secreto de firma válido.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
     if (credential.secretEncrypted) {
       const masterKey = process.env.SII_MASTER_KEY || DEFAULT_SII_MASTER_KEY;
       const secret = this.aesCipher.decrypt(
@@ -64,7 +70,7 @@ export class IntegrationHmacGuard implements CanActivate {
         credential.secretEncrypted.authTag,
         credential.secretEncrypted.salt,
       );
-      return IntegrationSignatureUtil.hashSecret(secret);
+      return credential.signingVersion === 'v2' ? secret : IntegrationSignatureUtil.hashSecret(secret);
     }
     return credential.secretHash;
   }
@@ -130,8 +136,7 @@ export class IntegrationHmacGuard implements CanActivate {
       );
     }
 
-    // 3. Verificar firma. La clave de firma es sha256hex(secreto), que es
-    //    exactamente el secretHash persistido.
+    // 3. Verificar firma con la versión de protocolo fijada al crear la clave.
     const rawBody = request.rawBody ?? (request.body !== undefined ? JSON.stringify(request.body) : '');
     const bodyHash = IntegrationSignatureUtil.bodyHash(rawBody);
     const pathWithQuery = request.originalUrl || request.url;

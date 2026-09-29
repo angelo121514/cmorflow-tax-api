@@ -10,6 +10,8 @@ export interface SiiEndpoints {
   tokenUrl: string;
   uploadUrl: string;
   uploadBoletaUrl: string;
+  /** URL oficial de carga RCOF, entregada para el ambiente SII habilitado. */
+  uploadRcofUrl?: string;
   queryUploadStatusUrl: string;
   queryDteAdvancedStatusUrl: string;
 }
@@ -47,6 +49,7 @@ export class SiiEnvironmentConfig {
       tokenUrl: this.configService.get<string>('SII_TOKEN_URL', `${baseUrl}/DTEWS/GetTokenFromSeed.jws`),
       uploadUrl: this.configService.get<string>('SII_UPLOAD_URL', `${baseUrl}/cgi_dte/UPL/DTEUpload`),
       uploadBoletaUrl: this.configService.get<string>('SII_UPLOAD_BOLETA_URL', defaultBoletaUploadUrl),
+      uploadRcofUrl: this.configService.get<string>('SII_UPLOAD_RCOF_URL') || undefined,
       queryUploadStatusUrl: this.configService.get<string>(
         'SII_QUERY_UPLOAD_STATUS_URL',
         `${baseUrl}/DTEWS/QueryEstUp.jws`,

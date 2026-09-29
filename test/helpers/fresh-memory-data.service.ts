@@ -9,6 +9,7 @@ import {
   IntegrationWebhookEventEntity,
   IntegrationWebhookDeliveryEntity,
   DteDocumentEntity,
+  InvoiceBrandProfileEntity,
   SiiSubmissionEntity,
   TenantEntity,
   AuditLogEntity,
@@ -25,6 +26,7 @@ export class FreshMemoryDataServices implements IDataServices, OnModuleInit {
   integrationWebhookEvent!: MemoryGenericRepository<IntegrationWebhookEventEntity>;
   integrationWebhookDelivery!: MemoryGenericRepository<IntegrationWebhookDeliveryEntity>;
   dteDocument!: MemoryGenericRepository<DteDocumentEntity>;
+  invoiceBrandProfile!: MemoryGenericRepository<InvoiceBrandProfileEntity>;
   siiSubmission!: MemoryGenericRepository<SiiSubmissionEntity>;
   tenant!: MemoryGenericRepository<TenantEntity>;
   auditLog!: MemoryGenericRepository<AuditLogEntity>;
@@ -38,6 +40,7 @@ export class FreshMemoryDataServices implements IDataServices, OnModuleInit {
     this.integrationWebhookEvent = new MemoryGenericRepository();
     this.integrationWebhookDelivery = new MemoryGenericRepository();
     this.dteDocument = new MemoryGenericRepository();
+    this.invoiceBrandProfile = new MemoryGenericRepository();
     this.siiSubmission = new MemoryGenericRepository();
     this.tenant = new MemoryGenericRepository();
     this.auditLog = new MemoryGenericRepository();

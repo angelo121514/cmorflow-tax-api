@@ -13,8 +13,10 @@ export class IntegrationRequestEntity {
   tenantId: string;
   /** dte | credit-note | debit-note | rcof */
   kind: 'dte' | 'credit-note' | 'debit-note' | 'rcof';
-  /** Header Idempotency-Key (obligatorio en emisión/anulación). */
+  /** Header Idempotency-Key (obligatorio en emisión DTE/notas y RCOF). */
   idempotencyKey: string;
+  /** Recurso de negocio al que aplica la operación (p. ej. DTE original). */
+  resourceKey: string;
   /** SHA-256 del body crudo, para detectar reuso conflictivo de la key (409). */
   requestHash: string;
   /** Referencia de negocio del integrador (ej. ID de consumo CMORAPR). */
@@ -38,7 +40,7 @@ export class IntegrationRequestEntity {
   /** RCOF generado (sólo kind=rcof). */
   rcofId?: string | null;
   /** Credencial que originó la solicitud. */
-  originCredentialId: string;
+  originCredentialId: string | null;
   attempts: number;
   maxAttempts: number;
   /** Momento en que la solicitud vuelve a ser reclamable (backoff / lock). */

@@ -89,9 +89,10 @@ export class DiscountEngine {
 
     if (hasPercentage) {
       const pct = item.discountPercentage!;
-      if (pct < 0 || pct > 100) {
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
         throw new Error(`Porcentaje de descuento fuera de rango (0-100): ${pct}`);
       }
+      this.assertPercentagePrecision(pct, 'El porcentaje de descuento');
       const discountAmount = Math.round((grossAmount * pct) / 100);
       return {
         grossAmount,
@@ -122,11 +123,12 @@ export class DiscountEngine {
    * NO aplica a exentos (por definición tributaria del SII).
    */
   applyGlobalDiscount(netAmount: number, percentage: number): GlobalDiscountResult {
+    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+      throw new Error(`Porcentaje de descuento global fuera de rango (0-100): ${percentage}`);
+    }
+    this.assertPercentagePrecision(percentage, 'El porcentaje de descuento global');
     if (percentage === 0) {
       return { netBeforeDiscount: netAmount, discountAmount: 0, netAfterDiscount: netAmount };
-    }
-    if (percentage < 0 || percentage > 100) {
-      throw new Error(`Porcentaje de descuento global fuera de rango (0-100): ${percentage}`);
     }
     const discountAmount = Math.round((netAmount * percentage) / 100);
     return {
@@ -204,5 +206,14 @@ export class DiscountEngine {
    */
   calculateVat(netAmount: number): number {
     return Math.round(netAmount * DiscountEngine.IVA_RATE);
+  }
+
+  private assertPercentagePrecision(value: number, label: string): void {
+    // El XSD de SII permite como máximo dos decimales para porcentajes. La
+    // tolerancia evita rechazar valores binarios equivalentes, como 5.1.
+    const scaled = value * 100;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-8) {
+      throw new Error(`${label} debe tener como máximo 2 decimales.`);
+    }
   }
 }

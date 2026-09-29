@@ -28,8 +28,8 @@ async function main(): Promise<void> {
     const secretEncrypted = new Aes256Cipher().encrypt(secret, masterKey);
     await AppDataSource.query(
       `INSERT INTO integration_credentials
-       (tenant_id, key_id, secret_hash, secret_encrypted, secret_last4, name, credential_type, permissions, status)
-       VALUES ($1, $2, $3, $4, $5, 'Bootstrap admin', 'admin', $6, 'active')`,
+       (tenant_id, key_id, secret_hash, secret_encrypted, signing_version, secret_last4, name, credential_type, permissions, status)
+       VALUES ($1, $2, $3, $4, 'v2', $5, 'Bootstrap admin', 'admin', $6, 'active')`,
       [
         tenantId,
         keyId,

@@ -2,6 +2,8 @@
 import { IntegrationRequestService } from './integration-request.service';
 import { MemoryGenericRepository } from '../../infrastructure/framework/memory/memory-generic-repository';
 import { IntegrationRequestEntity, DteDocumentEntity } from '@domain';
+import { IntegrationControllerHelper } from '../../controllers/integration-controller.helper';
+import { of, throwError } from 'rxjs';
 
 
 /** Ejecuta y exige IntegrationApiException con el codigo del catalogo (y mensaje opcional). */
@@ -89,6 +91,53 @@ describe('IntegrationRequestService — idempotencia y validación B2B', () => {
         enqueueInput({ tenantId: otherTenant, externalReference: 'APR-1' }),
       );
       expect(other.replayed).toBe(false);
+    });
+
+    it('resuelve una carrera de inserción como replay si el índice único ya creó la misma solicitud', async () => {
+      const existing = await service.enqueue(enqueueInput());
+      const originalCreate = dataServices.integrationRequest.create.bind(dataServices.integrationRequest);
+      const findOne = jest.spyOn(dataServices.integrationRequest, 'findOne')
+        .mockReturnValueOnce(of(null) as any);
+      dataServices.integrationRequest.create = jest.fn(() => {
+        const error: any = new Error('duplicate key');
+        error.driverError = { code: '23505' };
+        return throwError(() => error);
+      });
+
+      const result = await service.enqueue(enqueueInput());
+
+      expect(result).toMatchObject({ replayed: true, request: { id: existing.request.id } });
+      expect(dataServices.integrationRequest.create).toHaveBeenCalledTimes(1);
+      findOne.mockRestore();
+      dataServices.integrationRequest.create = originalCreate;
+    });
+
+    it('detecta payload distinto cuando la carrera pierde contra el índice único', async () => {
+      await service.enqueue(enqueueInput());
+      jest.spyOn(dataServices.integrationRequest, 'findOne').mockReturnValueOnce(of(null) as any);
+      dataServices.integrationRequest.create = jest.fn(() => {
+        const error: any = new Error('duplicate key');
+        error.driverError = { code: '23505' };
+        return throwError(() => error);
+      });
+
+      await expect(service.enqueue(enqueueInput({ rawBody: body.replace('1000', '2000') })))
+        .rejects.toMatchObject({ response: { error: { code: 'IDEMPOTENCY_CONFLICT' } } });
+    });
+
+    it('rechaza una Idempotency-Key vacía o sólo con espacios', async () => {
+      const helper = new IntegrationControllerHelper({} as any, service, {} as any);
+      expect(() => helper.requireIdempotencyKey('  ')).toThrow();
+      expect(() => helper.requireIdempotencyKey('external-key-42')).not.toThrow();
+    });
+
+    it('construye el enlace self de solicitudes RCOF hacia /rcof', async () => {
+      const { request } = await service.enqueue(enqueueInput({
+        kind: 'rcof', idempotencyKey: 'daily-rcof-2026-09-26', // gitleaks:allow -- identificador sintético de idempotencia, no credencial
+        payload: { date: '2026-09-26', sequenceNumber: 1 },
+      }));
+      const status = await service.buildStatus(request);
+      expect(status._links.self).toBe(`/api/v1/rcof/${request.id}`);
     });
   });
 

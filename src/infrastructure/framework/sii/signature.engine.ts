@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as forge from 'node-forge';
+import { SignedXml } from 'xml-crypto';
 
 @Injectable()
 export class SignatureEngine {
@@ -54,105 +55,37 @@ export class SignatureEngine {
         .replace(/-----END CERTIFICATE-----/, '')
         .replace(/[\r\n]/g, '');
 
-      // 2. Localizar y canonicalizar el nodo objetivo por ID.
-      const targetRegex = new RegExp(
-        `<([A-Za-z_:][\\w:.-]*)\\b[^>]*\\bID="${targetElementId}"[^>]*>[\\s\\S]*?<\\/\\1>`,
-        'g',
-      );
-      const match = targetRegex.exec(xmlContent);
-      if (!match) {
+      // xml-crypto hace C14N y el transform enveloped sobre un DOM. No se
+      // puede sustituir por regex: cambia el digest ante namespaces, atributos
+      // reordenados o texto escapado y puede insertar la firma fuera de la raíz.
+      const targetId = targetElementId.replace(/'/g, "&apos;");
+      if (!new RegExp(`\\bID=["']${targetElementId}["']`).test(xmlContent)) {
         throw new Error(`No se encontró un nodo con ID="${targetElementId}" en el XML suministrado.`);
       }
-      const targetTagName = match[1];
-      const rawDocumentNode = match[0];
-      const canonicalizedDoc = this.canonicalizeXml(rawDocumentNode);
-
-      // 3. Calcular Digest (SHA-1) del nodo Documento
-      const mdDoc = forge.md.sha1.create();
-      mdDoc.update(canonicalizedDoc, 'utf8');
-      const digestValue = forge.util.encode64(mdDoc.digest().getBytes());
-
-      // 4. Construir bloque <SignedInfo> canonicalizado
-      const signedInfoNode = 
-        `<SignedInfo>` +
-          `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-          `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
-          `<Reference URI="#${targetElementId}">` +
-            `<Transforms>` +
-              `<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>` +
-            `</Transforms>` +
-            `<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>` +
-            `<DigestValue>${digestValue}</DigestValue>` +
-          `</Reference>` +
-        `</SignedInfo>`;
-
-      const canonicalizedSignedInfo = this.canonicalizeXml(signedInfoNode);
-
-      // 5. Firmar el bloque <SignedInfo> usando la llave privada RSA
-      const mdSign = forge.md.sha1.create();
-      mdSign.update(canonicalizedSignedInfo, 'utf8');
-      const signatureBytes = privateKey.sign(mdSign);
-      const signatureValue = forge.util.encode64(signatureBytes);
-
-      // 6. Obtener Modulus y Exponent de la clave pública para el RSAKeyValue
-      const publicKey = cert.publicKey as forge.pki.rsa.PublicKey;
-      
-      let nHex = publicKey.n.toString(16);
-      if (nHex.length % 2 !== 0) nHex = '0' + nHex;
-      const modulus = forge.util.encode64(forge.util.hexToBytes(nHex));
-
-      let eHex = publicKey.e.toString(16);
-      if (eHex.length % 2 !== 0) eHex = '0' + eHex;
-      const exponent = forge.util.encode64(forge.util.hexToBytes(eHex));
-
-      // 7. Estructurar bloque <Signature> completo
-      const signatureBlock = 
-  `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-    `<SignedInfo>` +
-      `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-      `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
-      `<Reference URI="#${targetElementId}">` +
-        `<Transforms>` +
-          `<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>` +
-        `</Transforms>` +
-        `<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>` +
-        `<DigestValue>${digestValue}</DigestValue>` +
-      `</Reference>` +
-    `</SignedInfo>` +
-    `<SignatureValue>${signatureValue}</SignatureValue>` +
-    `<KeyInfo>` +
-      `<KeyValue>` +
-        `<RSAKeyValue>` +
-          `<Modulus>${modulus}</Modulus>` +
-          `<Exponent>${exponent}</Exponent>` +
-        `</RSAKeyValue>` +
-      `</KeyValue>` +
-      `<X509Data>` +
-        `<X509Certificate>${certCleanBase64}</X509Certificate>` +
-      `</X509Data>` +
-    `</KeyInfo>` +
-  `</Signature>`;
-
-      // 8. Insertar el bloque de firma como firma enveloped del nodo objetivo.
-      const targetStart = match.index;
-      const targetEnd = targetStart + rawDocumentNode.length;
-      let signedTargetNode = rawDocumentNode;
-      const closingTag = `</${targetTagName}>`;
-      if (targetElementId === 'EnvioDTE') {
-        const closingIndex = rawDocumentNode.lastIndexOf(closingTag);
-        signedTargetNode =
-          rawDocumentNode.slice(0, closingIndex) +
-          '\n' +
-          signatureBlock +
-          '\n' +
-          rawDocumentNode.slice(closingIndex);
-      } else {
-        signedTargetNode = rawDocumentNode + '\n' + signatureBlock;
-      }
-      const signedXml =
-        xmlContent.slice(0, targetStart) +
-        signedTargetNode +
-        xmlContent.slice(targetEnd);
+      const signer = new SignedXml({
+        privateKey: forge.pki.privateKeyToPem(privateKey),
+        publicCert: certPem,
+        signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+        canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+      });
+      signer.addReference({
+        xpath: `//*[@ID='${targetId}']`,
+        transforms: [
+          'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+          'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+        ],
+        digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
+      });
+      signer.computeSignature(xmlContent, {
+        // EnvioDTE firma SetDTE, pero su XSD exige <Signature> como hermano
+        // de SetDTE bajo la raíz. Los demás documentos usan firma enveloped.
+        location: targetElementId === 'SetDoc'
+          ? { reference: "/*[local-name(.)='EnvioDTE' or local-name(.)='EnvioBOLETA']", action: 'append' }
+          : { reference: `//*[@ID='${targetId}']`, action: 'append' },
+      });
+      const signedXml = signer.getSignedXml();
+      const signatureValue = /<SignatureValue>([^<]+)<\/SignatureValue>/.exec(signer.getSignatureXml())?.[1];
+      if (!signatureValue) throw new Error('No se pudo obtener SignatureValue del XMLDSig generado.');
 
       this.logger.log('Firmado digital XMLDSig completado de forma exitosa.');
       return {
@@ -165,23 +98,4 @@ export class SignatureEngine {
     }
   }
 
-  /**
-   * Implementa una canonicalización C14N simplificada pero robusta y simétrica,
-   * garantizando que no existan espacios en blanco extraños en los tags y los atributos
-   * estén perfectamente limpios para la firma criptográfica RSA.
-   */
-  private canonicalizeXml(xml: string): string {
-    return xml
-      // Eliminar retornos de carro y saltos de línea
-      .replace(/[\r\n]/g, '')
-      // Eliminar espacios en blanco inter-elementos (entre tags cerrados e iniciados)
-      .replace(/>\s+</g, '><')
-      // Eliminar espacios en blanco múltiples
-      .replace(/\s+/g, ' ')
-      // Asegurar que los tags autocerrados terminen sin espacios (ej. <Transform /> -> <Transform/>)
-      .replace(/\s*\/>/g, '/>')
-      // Reemplazar comillas simples de atributos por comillas dobles
-      .replace(/='([^']*)'/g, '="$1"')
-      .trim();
-  }
 }

@@ -14,6 +14,7 @@ import { DteXmlEngine } from './dte-xml.engine';
 import { SiiAuthTokenService } from './sii-auth-token.service';
 import { SiiXsdValidator } from './sii-xsd.validator';
 import { TenantConfigService } from './tenant-config.service';
+import { InvoiceBrandingService } from './invoice-branding.service';
 import { DiscountEngine } from './discount.engine';
 import { LoggerModule } from '../../logger/logger.module';
 
@@ -42,6 +43,7 @@ import { LoggerModule } from '../../logger/logger.module';
     SiiXsdValidator,
     PdfGenerator,
     TenantConfigService,
+    InvoiceBrandingService,
   ],
   exports: [
     Aes256Cipher,
@@ -57,6 +59,7 @@ import { LoggerModule } from '../../logger/logger.module';
     SiiXsdValidator,
     PdfGenerator,
     TenantConfigService,
+    InvoiceBrandingService,
   ],
 })
 export class SiiModule {}

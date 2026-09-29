@@ -1,6 +1,6 @@
 // src/controllers/health.controller.ts
 import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiExtension } from '@nestjs/swagger';
 import { Public } from '../infrastructure/decorators/public.decorator';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +17,7 @@ export class HealthController {
 
   @Get('health')
   @Public()
+  @ApiExtension('x-auth-type', 'public')
   @ApiOperation({ summary: 'Proceso vivo (liveness)' })
   health() {
     return { status: 'ok', timestamp: new Date().toISOString() };
@@ -24,6 +25,7 @@ export class HealthController {
 
   @Get('ready')
   @Public()
+  @ApiExtension('x-auth-type', 'public')
   @ApiOperation({ summary: 'Listo para tráfico (readiness): Postgres + config + crypto' })
   async ready(@Res({ passthrough: true }) response: Response) {
     const checks: Record<string, string> = {};

@@ -4,7 +4,18 @@
     "/api/v1/dtes": {
       "post": {
         "operationId": "DtesController_emit",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Cadena no vacía, limitada sólo por la capacidad del almacenamiento. Reutilizar la clave con un body distinto devuelve 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17,19 +28,113 @@
         },
         "responses": {
           "202": {
-            "description": "Solicitud aceptada y encolada."
+            "description": "Solicitud aceptada y encolada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conflicto de idempotencia o externalReference."
+            "description": "Conflicto de idempotencia o externalReference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Validación tributaria o totales."
+            "description": "Validación tributaria o totales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Emitir un DTE (33/34/39/41/46/52) de forma asíncrona",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "dte:emit"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Emisión asíncrona; la clave de idempotencia debe ser no vacía.\n\nPermiso requerido: `dte:emit`."
       },
       "get": {
         "operationId": "DtesController_findByExternalReference",
@@ -45,13 +150,93 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationRequestStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Reconciliar solicitudes por referencia externa",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "dte:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Consulta por externalReference dentro del tenant autenticado.\n\nPermiso requerido: `dte:read`."
       }
     },
     "/api/v1/dtes/{id}": {
@@ -69,13 +254,83 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationRequestStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Estado de una solicitud (por requestId o dteId)",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "dte:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Consulta por requestId o dteId dentro del tenant autenticado.\n\nPermiso requerido: `dte:read`."
       }
     },
     "/api/v1/dtes/{dteId}/credit-notes": {
@@ -89,6 +344,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Cadena no vacía, limitada sólo por la capacidad del almacenamiento. Reutilizar la clave con un body distinto devuelve 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "requestBody": {
@@ -103,13 +368,113 @@
         },
         "responses": {
           "202": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de idempotencia o unicidad de negocio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Emitir nota de crédito (61) del documento original",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "dte:emit"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Emisión de nota de crédito referenciada; Idempotency-Key no vacía.\n\nPermiso requerido: `dte:emit`."
       }
     },
     "/api/v1/dtes/{dteId}/debit-notes": {
@@ -123,6 +488,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Cadena no vacía, limitada sólo por la capacidad del almacenamiento. Reutilizar la clave con un body distinto devuelve 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "requestBody": {
@@ -137,13 +512,113 @@
         },
         "responses": {
           "202": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de idempotencia o unicidad de negocio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Emitir nota de débito (56) del documento original",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "dte:emit"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Emisión de nota de débito referenciada; Idempotency-Key no vacía.\n\nPermiso requerido: `dte:emit`."
       }
     },
     "/api/v1/dtes/{dteId}/xml": {
@@ -161,13 +636,84 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "xml"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Descargar el XML firmado del DTE",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "artifacts:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Devuelve el XML firmado como descarga.\n\nPermiso requerido: `artifacts:read`."
       }
     },
     "/api/v1/dtes/{dteId}/pdf": {
@@ -185,13 +731,84 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Descargar el PDF del DTE",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "artifacts:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Devuelve el PDF como descarga.\n\nPermiso requerido: `artifacts:read`."
       }
     },
     "/api/v1/dtes/{dteId}/artifact-links": {
@@ -209,20 +826,101 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactLinks"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Generar URLs firmadas de corta duración (XML y PDF)",
         "tags": [
           "dtes"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "artifacts:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Crea URLs firmadas de corta duración para XML y PDF.\n\nPermiso requerido: `artifacts:read`."
       }
     },
     "/api/v1/rcof": {
       "post": {
-        "description": "Idempotente por tenant, fecha y secuencia.",
+        "description": "Idempotente por tenant, fecha y secuencia.\n\nEncola RCOF manual; Idempotency-Key no vacía.\n\nPermiso requerido: `rcof:submit`.",
         "operationId": "RcofController_create",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Cadena no vacía, limitada sólo por la capacidad del almacenamiento. Reutilizar la clave con un body distinto devuelve 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -235,12 +933,101 @@
         },
         "responses": {
           "202": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de idempotencia o unicidad de negocio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Solicitar generación y transmisión del RCOF de una fecha",
         "tags": [
           "rcof"
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "rcof:submit"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
         ]
       }
     },
@@ -259,13 +1046,90 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/IntegrationRequestStatus"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RcofSubmissionStatus"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Estado del RCOF (estado, TrackID, respuesta SII)",
         "tags": [
           "rcof"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "rcof:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Consulta la solicitud durable o la submission RCOF por ID.\n\nPermiso requerido: `rcof:read`."
       }
     },
     "/api/v1/credentials": {
@@ -284,26 +1148,179 @@
         },
         "responses": {
           "201": {
-            "description": "Credencial creada con secreto inicial."
+            "description": "Credencial creada con secreto inicial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSecretResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de idempotencia o unicidad de negocio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Crear credencial — el secreto se muestra UNA sola vez",
         "tags": [
           "credentials"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa. El secreto sólo se devuelve al crearlo.\n\nPermiso requerido: `credentials:write`."
       },
       "get": {
         "operationId": "CredentialsController_list",
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CredentialInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Listar credenciales (enmascaradas)",
         "tags": [
           "credentials"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; las credenciales se devuelven enmascaradas.\n\nPermiso requerido: `credentials:read`."
       }
     },
     "/api/v1/credentials/{id}/rotate": {
@@ -321,13 +1338,93 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSecretResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Rotar credencial — la antigua vive 24h de gracia",
         "tags": [
           "credentials"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; el nuevo secreto sólo se devuelve una vez.\n\nPermiso requerido: `credentials:write`."
       }
     },
     "/api/v1/credentials/{id}/revoke": {
@@ -345,13 +1442,93 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Revoked"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Revocar credencial inmediatamente",
         "tags": [
           "credentials"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa.\n\nPermiso requerido: `credentials:write`."
       }
     },
     "/api/v1/webhooks": {
@@ -370,26 +1547,169 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSecretResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Registrar endpoint webhook — secreto de firma se muestra una vez",
         "tags": [
           "webhooks"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "webhooks:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; el secreto sólo se devuelve al crearlo.\n\nPermiso requerido: `webhooks:write`."
       },
       "get": {
         "operationId": "WebhooksController_list",
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEndpoint"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Listar endpoints webhook",
         "tags": [
           "webhooks"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "webhooks:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; requiere credencial admin.\n\nPermiso requerido: `webhooks:read`."
       }
     },
     "/api/v1/webhooks/{id}/deactivate": {
@@ -407,13 +1727,93 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deactivated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Desactivar endpoint webhook",
         "tags": [
           "webhooks"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "webhooks:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa.\n\nPermiso requerido: `webhooks:write`."
       }
     },
     "/api/v1/webhooks/events/{eventId}/redeliver": {
@@ -431,13 +1831,93 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuedCount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Reenviar un evento webhook manualmente",
         "tags": [
           "webhooks"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "webhooks:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; crea entregas de webhook nuevas.\n\nPermiso requerido: `webhooks:write`."
       }
     },
     "/api/v1/webhooks/deliveries": {
@@ -455,13 +1935,76 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDelivery"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Historial de entregas webhook (últimas 50)",
         "tags": [
           "webhooks"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "webhooks:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; requiere credencial admin.\n\nPermiso requerido: `webhooks:read`."
       }
     },
     "/api/v1/artifacts/{token}": {
@@ -479,13 +2022,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "xml"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Descargar artefacto con URL firmada (sin headers HMAC)",
         "tags": [
           "artifacts"
-        ]
+        ],
+        "x-auth-type": "signed-token",
+        "security": [],
+        "description": "La autorización está dentro del token firmado; no requiere HMAC ni Bearer."
       }
     },
     "/api/v1/internal/cron/process-integrations": {
@@ -494,13 +2074,49 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Reconciler: cola + polling SII + webhooks + purge (cada 5 min)",
         "tags": [
           "internal"
-        ]
+        ],
+        "x-auth-type": "cron",
+        "security": [
+          {
+            "cron-timestamp": [],
+            "cron-nonce": [],
+            "cron-signature": []
+          }
+        ],
+        "description": "Endpoint interno autenticado con HMAC de cron."
       }
     },
     "/api/v1/internal/cron/deliver-webhooks": {
@@ -509,13 +2125,49 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Entrega de webhooks vencidos (cada 2 min)",
         "tags": [
           "internal"
-        ]
+        ],
+        "x-auth-type": "cron",
+        "security": [
+          {
+            "cron-timestamp": [],
+            "cron-nonce": [],
+            "cron-signature": []
+          }
+        ],
+        "description": "Endpoint interno autenticado con HMAC de cron."
       }
     },
     "/api/v1/internal/cron/rcof-daily": {
@@ -524,13 +2176,49 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "RCOF diario automático por tenant (zona America/Santiago)",
         "tags": [
           "internal"
-        ]
+        ],
+        "x-auth-type": "cron",
+        "security": [
+          {
+            "cron-timestamp": [],
+            "cron-nonce": [],
+            "cron-signature": []
+          }
+        ],
+        "description": "Endpoint interno autenticado con HMAC de cron; encola RCOF diarios durablemente."
       }
     },
     "/api/v1/health": {
@@ -539,13 +2227,33 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Proceso vivo (liveness)",
         "tags": [
           "health"
-        ]
+        ],
+        "x-auth-type": "public",
+        "security": [],
+        "description": "Liveness público."
       }
     },
     "/api/v1/ready": {
@@ -554,13 +2262,43 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "Listo para tráfico (readiness): Postgres + config + crypto",
         "tags": [
           "health"
-        ]
+        ],
+        "x-auth-type": "public",
+        "security": [],
+        "description": "Readiness público; puede responder 503 cuando no está listo."
       }
     },
     "/api/v1/configuration/caf": {
@@ -579,13 +2317,103 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CafUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Cargar XML CAF completo del SII",
         "tags": [
           "configuration"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa de configuración tributaria.\n\nPermiso requerido: `credentials:write`."
       }
     },
     "/api/v1/configuration/signature": {
@@ -604,13 +2432,93 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Guardar certificado digital PFX cifrado",
         "tags": [
           "configuration"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Operación administrativa; el certificado se cifra en reposo.\n\nPermiso requerido: `credentials:write`."
       }
     },
     "/api/v1/configuration/folios": {
@@ -619,13 +2527,340 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Respuesta exitosa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FolioStock"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         },
         "summary": "[Admin] Consultar stock y estado de folios CAF",
         "tags": [
           "configuration"
-        ]
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Consulta administrativa de folios CAF.\n\nPermiso requerido: `credentials:read`."
+      }
+    },
+    "/api/v1/configuration/branding": {
+      "get": {
+        "operationId": "TenantConfigController_getBranding",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Metadatos de la versión visual actualmente activa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceBrandingMetadataDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "[Admin] Consultar la versión visual activa de facturas",
+        "tags": [
+          "configuration"
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Consulta administrativa de marca visual.\n\nPermiso requerido: `credentials:read`."
+      },
+      "put": {
+        "operationId": "TenantConfigController_updateBranding",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInvoiceBrandingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadatos de la nueva versión visual activada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceBrandingMetadataDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o headers obligatorios ausentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud no cumple validaciones de dominio o tributarias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "[Admin] Crear y activar una nueva versión visual de facturas",
+        "tags": [
+          "configuration"
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:write"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Actualización administrativa versionada de marca visual.\n\nPermiso requerido: `credentials:write`."
+      }
+    },
+    "/api/v1/configuration/branding/logo": {
+      "get": {
+        "operationId": "TenantConfigController_getBrandingLogo",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "PNG normalizado de la versión visual activa.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticación inválida o faltante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La credencial no tiene el permiso requerido o el tenant no corresponde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado dentro del tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de solicitudes excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "[Admin] Descargar el logo de la versión visual activa",
+        "tags": [
+          "configuration"
+        ],
+        "x-auth-type": "hmac",
+        "x-required-permissions": [
+          "credentials:read"
+        ],
+        "security": [
+          {
+            "integration-hmac": [],
+            "integration-timestamp": [],
+            "integration-nonce": [],
+            "integration-signature": []
+          }
+        ],
+        "description": "Logo privado de la versión visual activa.\n\nPermiso requerido: `credentials:read`."
       }
     }
   },
@@ -653,6 +2888,10 @@
       "description": "Gestión de webhooks (admin)"
     },
     {
+      "name": "configuration",
+      "description": "Configuración tributaria y visual (admin)"
+    },
+    {
       "name": "artifacts",
       "description": "Descarga de artefactos con URL firmada"
     },
@@ -668,7 +2907,39 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Api-Key",
-        "description": "Autenticación HMAC. Requiere X-Timestamp, X-Nonce y X-Signature. Credenciales API: cmor_live_*, admin: cmor_admin_*."
+        "description": "Credencial pública; se usa junto con timestamp, nonce y firma HMAC."
+      },
+      "integration-timestamp": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Timestamp"
+      },
+      "integration-nonce": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Nonce"
+      },
+      "integration-signature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Signature",
+        "description": "HMAC-SHA256 del string canónico."
+      },
+      "cron-timestamp": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cron-Timestamp"
+      },
+      "cron-nonce": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cron-Nonce"
+      },
+      "cron-signature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cron-Signature",
+        "description": "HMAC-SHA256 del body crudo con CRON_HMAC_SECRET."
       }
     },
     "schemas": {
@@ -707,7 +2978,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "example": "Consumo de agua - Julio 2026"
+            "example": "Consumo de agua - Julio 2026",
+            "description": "Nombre o descripción del ítem (máximo 80 caracteres)."
           },
           "quantity": {
             "type": "number",
@@ -727,7 +2999,7 @@
           "discountPercentage": {
             "type": "number",
             "example": 10,
-            "description": "Descuento por línea en % (0-100). Excluyente con discountAmount."
+            "description": "Descuento por línea en % (0-100, máximo 2 decimales). Excluyente con discountAmount."
           },
           "discountAmount": {
             "type": "number",
@@ -912,6 +3184,8 @@
             ]
           },
           "items": {
+            "maxItems": 1000,
+            "description": "Detalle de ítems del DTE (máximo 1000 líneas).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IntegrationItemDto"
@@ -956,7 +3230,7 @@
           "globalDiscountPercentage": {
             "type": "number",
             "example": 5,
-            "description": "Descuento global % a ítems afectos"
+            "description": "Descuento global % a ítems afectos (máximo 2 decimales)"
           },
           "totals": {
             "description": "Totales declarados: el servidor recalcula y valida; divergencia > $1 → 422.",
@@ -998,7 +3272,8 @@
             "example": "Anula documento por error de emisión"
           },
           "items": {
-            "description": "Líneas de la nota (en anulación: línea simbólica $0).",
+            "maxItems": 1000,
+            "description": "Líneas de la nota (máximo 1000; en anulación: línea simbólica $0).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IntegrationItemDto"
@@ -1065,7 +3340,6 @@
             "enum": [
               "dte:emit",
               "dte:read",
-              "dte:cancel",
               "rcof:submit",
               "rcof:read",
               "artifacts:read",
@@ -1151,6 +3425,740 @@
           "pfxBase64",
           "password"
         ]
+      },
+      "InvoiceBrandLogoMetadataDto": {
+        "type": "object",
+        "properties": {
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "image/png"
+            ],
+            "description": "El logo se normaliza siempre a PNG antes de almacenarse."
+          },
+          "sha256": {
+            "type": "string",
+            "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "bytes": {
+            "type": "number",
+            "example": 14382,
+            "description": "Tamaño del PNG normalizado en bytes."
+          }
+        },
+        "required": [
+          "mimeType",
+          "sha256",
+          "bytes"
+        ]
+      },
+      "InvoiceBrandingMetadataDto": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "example": true
+          },
+          "version": {
+            "type": "number",
+            "nullable": true,
+            "example": 3
+          },
+          "primaryColor": {
+            "type": "string",
+            "nullable": true,
+            "example": "#1F4B99"
+          },
+          "secondaryColor": {
+            "type": "string",
+            "nullable": true,
+            "example": "#5B8DEF"
+          },
+          "logo": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceBrandLogoMetadataDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "configured",
+          "version",
+          "primaryColor",
+          "secondaryColor",
+          "logo",
+          "createdAt"
+        ]
+      },
+      "BrandLogoDto": {
+        "type": "object",
+        "properties": {
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg"
+            ],
+            "description": "Formato real del archivo enviado."
+          },
+          "base64": {
+            "type": "string",
+            "description": "Contenido del logo en base64 estándar, sin prefijo data:. Máximo 700 KB antes de normalizar.",
+            "maxLength": 955736
+          }
+        },
+        "required": [
+          "mimeType",
+          "base64"
+        ]
+      },
+      "UpdateInvoiceBrandingDto": {
+        "type": "object",
+        "properties": {
+          "logo": {
+            "nullable": true,
+            "description": "Logo de la nueva versión. Use null para una marca sin logo.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BrandLogoDto"
+              }
+            ]
+          },
+          "primaryColor": {
+            "type": "string",
+            "example": "#1F4B99",
+            "description": "Color principal en formato #RRGGBB."
+          },
+          "secondaryColor": {
+            "type": "string",
+            "example": "#5B8DEF",
+            "description": "Color secundario en formato #RRGGBB."
+          }
+        },
+        "required": [
+          "logo",
+          "primaryColor",
+          "secondaryColor"
+        ]
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "required": [
+          "statusCode",
+          "error"
+        ],
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "example": 422
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "message": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "QueuedRequest": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "kind",
+          "status",
+          "message",
+          "_links"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dteId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dte",
+              "credit-note",
+              "debit-note",
+              "rcof"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued"
+            ]
+          },
+          "externalReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "_links": {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "string",
+                "example": "/api/v1/dtes/{requestId}"
+              }
+            },
+            "required": [
+              "self"
+            ]
+          }
+        }
+      },
+      "IntegrationRequestStatus": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "kind",
+          "status",
+          "attempts",
+          "_links"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "processing",
+              "submitted",
+              "accepted",
+              "observed",
+              "rejected",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "externalReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "dte": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "rcof": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finalizedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "_links": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RcofSubmissionStatus": {
+        "type": "object",
+        "required": [
+          "rcofId",
+          "periodDate",
+          "sequence",
+          "status"
+        ],
+        "properties": {
+          "rcofId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "periodDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "accepted",
+              "observed",
+              "rejected",
+              "failed"
+            ]
+          },
+          "trackId": {
+            "type": "string",
+            "nullable": true
+          },
+          "siiResponse": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ArtifactLinks": {
+        "type": "object",
+        "required": [
+          "xmlUrl",
+          "pdfUrl",
+          "expiresAt"
+        ],
+        "properties": {
+          "xmlUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "pdfUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CredentialInfo": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "credentialType": {
+            "type": "string",
+            "enum": [
+              "api",
+              "admin"
+            ]
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "CredentialSecretResult": {
+        "type": "object",
+        "required": [
+          "credential",
+          "secret"
+        ],
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/CredentialInfo"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Visible una sola vez."
+          }
+        }
+      },
+      "Revoked": {
+        "type": "object",
+        "required": [
+          "revoked"
+        ],
+        "properties": {
+          "revoked": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "secretLast4": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookSecretResult": {
+        "type": "object",
+        "required": [
+          "endpoint",
+          "secret"
+        ],
+        "properties": {
+          "endpoint": {
+            "$ref": "#/components/schemas/WebhookEndpoint"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Visible una sola vez."
+          }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "responseStatus": {
+            "type": "integer",
+            "nullable": true
+          },
+          "nextAttemptAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Deactivated": {
+        "type": "object",
+        "required": [
+          "deactivated"
+        ],
+        "properties": {
+          "deactivated": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "QueuedCount": {
+        "type": "object",
+        "required": [
+          "queued"
+        ],
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CronResult": {
+        "type": "object",
+        "required": [
+          "job",
+          "ok"
+        ],
+        "properties": {
+          "job": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status",
+          "timestamp"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Readiness": {
+        "type": "object",
+        "required": [
+          "status",
+          "checks",
+          "timestamp"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ]
+          },
+          "checks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CafUploadResult": {
+        "type": "object",
+        "required": [
+          "success",
+          "message",
+          "caf"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "caf": {
+            "type": "object",
+            "required": [
+              "type",
+              "rangeFrom",
+              "rangeTo",
+              "authorizationDate"
+            ],
+            "properties": {
+              "type": {
+                "type": "integer",
+                "example": 33
+              },
+              "rangeFrom": {
+                "type": "integer"
+              },
+              "rangeTo": {
+                "type": "integer"
+              },
+              "authorizationDate": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          }
+        }
+      },
+      "SignatureResult": {
+        "type": "object",
+        "required": [
+          "success",
+          "message",
+          "subjectName",
+          "validTo",
+          "fingerprint"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        }
+      },
+      "FolioStock": {
+        "type": "object",
+        "required": [
+          "type",
+          "hasCaf",
+          "totalAuthorized",
+          "utilized",
+          "remaining",
+          "alert",
+          "threshold"
+        ],
+        "properties": {
+          "type": {
+            "type": "integer",
+            "enum": [
+              33,
+              34,
+              39,
+              41,
+              46,
+              52,
+              56,
+              61
+            ]
+          },
+          "hasCaf": {
+            "type": "boolean"
+          },
+          "totalAuthorized": {
+            "type": "integer"
+          },
+          "utilized": {
+            "type": "integer"
+          },
+          "remaining": {
+            "type": "integer"
+          },
+          "alert": {
+            "type": "string",
+            "enum": [
+              "SALUDABLE",
+              "ADVERTENCIA",
+              "CRITICO"
+            ]
+          },
+          "threshold": {
+            "type": "integer",
+            "description": "Umbral de alerta expresado como porcentaje.",
+            "example": 20
+          }
+        }
       }
     }
   }

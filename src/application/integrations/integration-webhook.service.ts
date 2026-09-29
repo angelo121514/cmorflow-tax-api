@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { createHmac, randomBytes } from 'crypto';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
+import * as ipaddr from 'ipaddr.js';
 import { Agent } from 'undici';
 import {
   IDataServices,
@@ -54,7 +55,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
     return key;
   }
 
-  // ── Administración de endpoints (JWT interno) ──
+  // ── Administración de endpoints (HMAC con credencial admin) ──
 
   async registerEndpoint(
     tenantId: string,
@@ -354,9 +355,8 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       await this.assertSafeWebhookUrl(endpoint.url);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
-      let response: Response;
       try {
-        response = await fetch(endpoint.url, {
+        const response = await fetch(endpoint.url, {
           method: 'POST',
           redirect: 'error',
           headers: {
@@ -371,13 +371,14 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
           signal: controller.signal,
           dispatcher,
         } as RequestInit);
+        responseStatus = response.status;
+        snippet = await this.readResponseSnippet(response);
+        if (!response.ok) {
+          error = `HTTP ${response.status}`;
+        }
       } finally {
+        // The deadline covers both headers and body consumption.
         clearTimeout(timer);
-      }
-      responseStatus = response.status;
-      snippet = (await response.text()).slice(0, RESPONSE_SNIPPET_MAX);
-      if (!response.ok) {
-        error = `HTTP ${response.status}`;
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -386,7 +387,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
     }
 
     const attempt = delivery.attempt + 1;
-    if (responseStatus && responseStatus >= 200 && responseStatus < 300) {
+    if (!error && responseStatus && responseStatus >= 200 && responseStatus < 300) {
       await firstValueFrom(
         this.dataServices.integrationWebhookDelivery.update(delivery.id, {
           attempt,
@@ -415,6 +416,36 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       } as any),
     );
     return false;
+  }
+
+  private async readResponseSnippet(response: Response): Promise<string> {
+    if (!response.body) return '';
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (size < RESPONSE_SNIPPET_MAX) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const remaining = RESPONSE_SNIPPET_MAX - size;
+        const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+        chunks.push(chunk);
+        size += chunk.byteLength;
+        if (chunk.byteLength < value.byteLength || size >= RESPONSE_SNIPPET_MAX) {
+          await reader.cancel('Response snippet limit reached').catch(() => undefined);
+          break;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(bytes);
   }
 
   /** Reenvío manual (diagnóstico): crea un intento inmediato para el evento. */
@@ -447,10 +478,15 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
   async deliveryHistory(tenantId: string, eventId?: string) {
     const deliveries = await firstValueFrom(
       this.dataServices.integrationWebhookDelivery.find(
-        eventId ? ({ where: { tenantId, eventId } } as any) : ({ where: { tenantId } } as any),
+        eventId
+          ? ({ where: { tenantId, eventId }, order: { createdAt: 'DESC' } } as any)
+          : ({ where: { tenantId }, order: { createdAt: 'DESC' } } as any),
       ),
     );
-    return deliveries.slice(-50).map((d: any) => ({
+    return deliveries
+      .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+      .slice(0, 50)
+      .map((d: any) => ({
       id: d.id,
       eventId: d.eventId,
       endpointId: d.endpointId,
@@ -461,7 +497,7 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
       lastError: d.lastError ?? null,
       nextAttemptAt: d.nextAttemptAt,
       deliveredAt: d.deliveredAt ?? null,
-    }));
+      }));
   }
 
   private decryptSecret(endpoint: IntegrationWebhookEndpointEntity): string {
@@ -502,16 +538,17 @@ export class IntegrationWebhookService implements IntegrationEventDispatcher {
   }
 
   private isPrivateAddress(address: string): boolean {
-    if (address === '::1' || address === '::' || address.startsWith('fe80:') || address.startsWith('fc') || address.startsWith('fd')) return true;
-    if (address.startsWith('::ffff:')) return this.isPrivateAddress(address.slice(7));
-    const parts = address.split('.').map(Number);
-    return parts.length === 4 && (
-      parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
-      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
-      (parts[0] === 169 && parts[1] === 254) ||
-      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-      (parts[0] === 192 && parts[1] === 168)
-    );
+    try {
+      let parsed = ipaddr.parse(address);
+      if (parsed.kind() === 'ipv6' && (parsed as ipaddr.IPv6).isIPv4MappedAddress()) {
+        parsed = (parsed as ipaddr.IPv6).toIPv4Address();
+      }
+      // Bloquea loopback, private, link-local, CGNAT, multicast, reservado,
+      // broadcast y direcciones no especificadas tanto en IPv4 como IPv6.
+      return parsed.range() !== 'unicast';
+    } catch {
+      return true;
+    }
   }
 
   /**

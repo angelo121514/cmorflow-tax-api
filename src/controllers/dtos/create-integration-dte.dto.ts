@@ -10,6 +10,8 @@ import {
   IsBoolean,
   IsInt,
   IsDateString,
+  ArrayMaxSize,
+  MaxLength,
   Min,
   Max,
   ValidateNested,
@@ -53,9 +55,10 @@ export class IntegrationReceiverDto {
 }
 
 export class IntegrationItemDto {
-  @ApiProperty({ example: 'Consumo de agua - Julio 2026' })
+  @ApiProperty({ example: 'Consumo de agua - Julio 2026', description: 'Nombre o descripción del ítem (máximo 80 caracteres).' })
   @IsNotEmpty()
   @IsString()
+  @MaxLength(80, { message: 'name no puede superar los 80 caracteres permitidos por el formato DTE.' })
   name: string;
 
   @ApiProperty({ example: 1, description: 'Cantidad (entera o decimal > 0)' })
@@ -72,14 +75,13 @@ export class IntegrationItemDto {
 
   @ApiProperty({ example: false, required: false, description: 'Ítem exento (obligatorio true en tipos 34/41)' })
   @IsOptional()
-  @Type(() => Boolean)
   @IsBoolean()
   exempt?: boolean;
 
-  @ApiProperty({ example: 10, required: false, description: 'Descuento por línea en % (0-100). Excluyente con discountAmount.' })
+  @ApiProperty({ example: 10, required: false, description: 'Descuento por línea en % (0-100, máximo 2 decimales). Excluyente con discountAmount.' })
   @IsOptional()
   @ValidateIf((o) => !o.discountAmount)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   discountPercentage?: number;
@@ -159,9 +161,10 @@ export class CreateIntegrationDteDto {
   @Type(() => IntegrationReceiverDto)
   receiver?: IntegrationReceiverDto;
 
-  @ApiProperty({ type: [IntegrationItemDto] })
+  @ApiProperty({ type: [IntegrationItemDto], maxItems: 1000, description: 'Detalle de ítems del DTE (máximo 1000 líneas).' })
   @IsNotEmpty()
   @IsArray()
+  @ArrayMaxSize(1000, { message: 'items no puede superar las 1000 líneas permitidas por el formato DTE.' })
   @ValidateNested({ each: true })
   @Type(() => IntegrationItemDto)
   items: IntegrationItemDto[];
@@ -176,6 +179,7 @@ export class CreateIntegrationDteDto {
   @ApiProperty({ example: 'GROSS', required: false, description: 'GROSS (IVA incluido) o NET. Default: GROSS en boletas, NET en facturas.' })
   @IsOptional()
   @IsString()
+  @IsIn(['GROSS', 'NET'])
   pricingMode?: 'GROSS' | 'NET';
 
   @ApiProperty({ example: 3, required: false, description: 'IndServicio boletas' })
@@ -201,9 +205,9 @@ export class CreateIntegrationDteDto {
   @Type(() => DteTaxRetentionDto)
   taxRetentions?: DteTaxRetentionDto[];
 
-  @ApiProperty({ example: 5, required: false, description: 'Descuento global % a ítems afectos' })
+  @ApiProperty({ example: 5, required: false, description: 'Descuento global % a ítems afectos (máximo 2 decimales)' })
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   globalDiscountPercentage?: number;
@@ -237,9 +241,10 @@ export class CreateIntegrationNoteDto {
   @IsString()
   reason: string;
 
-  @ApiProperty({ type: [IntegrationItemDto], description: 'Líneas de la nota (en anulación: línea simbólica $0).' })
+  @ApiProperty({ type: [IntegrationItemDto], maxItems: 1000, description: 'Líneas de la nota (máximo 1000; en anulación: línea simbólica $0).' })
   @IsNotEmpty()
   @IsArray()
+  @ArrayMaxSize(1000, { message: 'items no puede superar las 1000 líneas permitidas por el formato DTE.' })
   @ValidateNested({ each: true })
   @Type(() => IntegrationItemDto)
   items: IntegrationItemDto[];

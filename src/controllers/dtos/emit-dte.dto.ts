@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsString, IsArray, ValidateNested, Min, Max, IsPositive, IsOptional, ValidateIf, IsIn } from 'class-validator';
+import { ArrayMaxSize, IsNotEmpty, IsNumber, IsString, IsArray, MaxLength, ValidateNested, Min, Max, IsPositive, IsOptional, ValidateIf, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsChileanRut } from '../../infrastructure/decorators/is-chilean-rut.decorator';
@@ -38,9 +38,10 @@ export class DteReferenceDto {
 }
 
 export class DteItemDto {
-  @ApiProperty({ example: 'Servicio de Hosting B2B', description: 'Nombre o descripción del producto o servicio' })
+  @ApiProperty({ example: 'Servicio de Hosting B2B', description: 'Nombre o descripción del producto o servicio (máximo 80 caracteres).' })
   @IsNotEmpty()
   @IsString()
+  @MaxLength(80, { message: 'name no puede superar los 80 caracteres permitidos por el formato DTE.' })
   name: string;
 
   @ApiProperty({ example: 1, description: 'Cantidad' })
@@ -65,10 +66,10 @@ export class DteItemDto {
   @IsString()
   unit?: string;
 
-  @ApiProperty({ example: 10, required: false, description: 'Descuento por línea en porcentaje (0-100). No se puede usar junto a discountAmount.' })
+  @ApiProperty({ example: 10, required: false, description: 'Descuento por línea en porcentaje (0-100, máximo 2 decimales). No se puede usar junto a discountAmount.' })
   @IsOptional()
   @ValidateIf((o) => !o.discountAmount)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   discountPercentage?: number;
@@ -204,9 +205,10 @@ export class EmitDteDto {
   @IsPositive()
   amount: number;
 
-  @ApiProperty({ type: [DteItemDto], description: 'Detalle de ítems del DTE' })
+  @ApiProperty({ type: [DteItemDto], maxItems: 1000, description: 'Detalle de ítems del DTE (máximo 1000 líneas).' })
   @IsNotEmpty()
   @IsArray()
+  @ArrayMaxSize(1000, { message: 'items no puede superar las 1000 líneas permitidas por el formato DTE.' })
   @ValidateNested({ each: true })
   @Type(() => DteItemDto)
   items: DteItemDto[];
@@ -250,9 +252,9 @@ export class EmitDteDto {
   taxRetentions?: DteTaxRetentionDto[];
 
   // ── Descuento global ──
-  @ApiProperty({ example: 19, required: false, description: 'Descuento global a ítems afectos (0-100). Solo facturas.' })
+  @ApiProperty({ example: 19, required: false, description: 'Descuento global a ítems afectos (0-100, máximo 2 decimales). Solo facturas.' })
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   globalDiscountPercentage?: number;

@@ -66,6 +66,41 @@ describe('IntegrationCredentialsUseCase — ciclo de vida de credenciales B2B', 
     ).rejects.toThrow();
   });
 
+  it('reserva webhooks:read y webhooks:write para credenciales admin', async () => {
+    await expect(
+      useCase.create(tenantId, { name: 'API', permissions: ['webhooks:read'] }),
+    ).rejects.toThrow(/webhooks:read/);
+    await expect(
+      useCase.create(tenantId, { name: 'API', permissions: ['webhooks:write'] }),
+    ).rejects.toThrow(/webhooks:write/);
+    await expect(
+      useCase.create(tenantId, {
+        name: 'Admin',
+        credentialType: 'admin',
+        permissions: ['webhooks:read', 'webhooks:write'],
+      }),
+    ).resolves.toMatchObject({ credential: { credentialType: 'admin' } });
+  });
+
+  it('no acepta dte:cancel como permiso v1 hasta que exista una ruta validada', async () => {
+    await expect(
+      useCase.create(tenantId, { name: 'API', permissions: ['dte:cancel'] as any }),
+    ).rejects.toThrow(/dte:cancel/);
+  });
+
+  it('no copia dte:cancel heredado a una credencial nueva al rotarla', async () => {
+    const { credential } = await useCase.create(tenantId, {
+      name: 'Legacy', permissions: ['dte:read'],
+    });
+    await dataServices.integrationCredential.update(credential.id, {
+      permissions: ['dte:read', 'dte:cancel'],
+    } as any).toPromise();
+
+    const rotated = await useCase.rotate(tenantId, credential.id);
+
+    expect(rotated.credential.permissions).toEqual(['dte:read']);
+  });
+
   it('lista enmascarado: nunca expone hash ni secreto', async () => {
     const { credential } = await useCase.create(tenantId, {
       name: 'CMORAPR',

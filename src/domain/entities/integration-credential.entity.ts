@@ -7,7 +7,7 @@
  * ni de headers controlables por el cliente.
  *
  * El secreto (`cmc_...`) se muestra UNA sola vez al crearse/rotarse;
- * aquí sólo se almacena su hash SHA-256.
+ * El secreto se cifra en reposo y se muestra una sola vez.
  */
 export class IntegrationCredentialEntity {
   id?: string;
@@ -22,6 +22,8 @@ export class IntegrationCredentialEntity {
    * usable. Credenciales legacy (NULL) siguen usando secretHash como clave.
    */
   secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null;
+  /** v1 usa el hash legado como clave HMAC; v2 firma con el secreto original. */
+  signingVersion?: 'v1' | 'v2';
   /** Últimos 4 caracteres del secreto, para identificarlo en la UI. */
   secretLast4: string;
   /** Etiqueta descriptiva (ej. "CMORAPR staging"). */

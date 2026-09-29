@@ -1,0 +1,39 @@
+name: Reportar un problema
+description: Un fallo reproducible con datos sintéticos.
+title: "[Bug] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: "Para vulnerabilidades usa SECURITY.md y un canal privado. No incluyas credenciales, PFX, CAF privados ni datos reales."
+  - type: input
+    id: revision
+    attributes:
+      label: Versión o commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Entorno
+      description: "Node, PostgreSQL, sistema operativo y modo SII (mock/certificación)."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      description: "Usa un ejemplo mínimo con datos sintéticos."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado y observado
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs sanitizados y feature relacionada
+      description: "Elimina secretos y datos personales; indica F-xx si lo conoces."

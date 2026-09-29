@@ -90,6 +90,18 @@ export class SiiSoapClient {
     );
   }
 
+  /** Envía el Consumo de Folios firmado por su canal propio, nunca dentro de EnvioBOLETA. */
+  public sendRcof(signedXml: string, token: string): Observable<{ trackId: string; status: string }> {
+    if (this.siiEnvironmentConfig.integrationMode === 'real') {
+      return from(this.uploadRealRcof(signedXml, token));
+    }
+    return of(null).pipe(delay(150), map(() => {
+      const result = this.siiMockSoap.receiveRcof(signedXml, token);
+      if (!result.success || !result.trackId) throw new Error(result.errorMsg || 'El mock RCOF rechazó el documento.');
+      return { trackId: result.trackId, status: 'ENVIADO' };
+    }));
+  }
+
   public sendLibroCompraVenta(signedXml: string, token: string): Observable<{ trackId: string; status: string }> {
     if (this.siiEnvironmentConfig.integrationMode === 'real') {
       return from(Promise.reject(new Error('La transmisión IECV real todavía no está habilitada; usa el flujo de certificación cuando se valide el contrato SII.')));
@@ -275,6 +287,30 @@ export class SiiSoapClient {
       throw new Error(`Respuesta upload SII sin TrackId: ${responseText.slice(0, 500)}`);
     }
 
+    return { trackId, status: 'ENVIADO' };
+  }
+
+  private async uploadRealRcof(signedXml: string, token: string): Promise<{ trackId: string; status: string }> {
+    const uploadUrl = this.siiEnvironmentConfig.endpoints.uploadRcofUrl;
+    if (!uploadUrl) {
+      throw new Error('SII_UPLOAD_RCOF_URL es obligatorio en modo real: configure la URL oficial provista por SII para el ambiente habilitado.');
+    }
+    await this.siiXsdValidator.validateConsumoFolio(signedXml);
+    const sender = this.parseRut(this.extractFirst(signedXml, ['RutEnvia']) || this.siiEnvironmentConfig.senderRut || '');
+    const company = this.parseRut(this.extractFirst(signedXml, ['RutEmisor']) || sender.full);
+    const boundary = `----sii-rcof-${Date.now().toString(16)}`;
+    const chunks: Buffer[] = [];
+    for (const [name, value] of [['rutSender', sender.body], ['dvSender', sender.dv], ['rutCompany', company.body], ['dvCompany', company.dv]]) {
+      chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`, 'latin1'));
+    }
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="archivo"; filename="consumo-folio.xml"\r\nContent-Type: text/xml; charset=ISO-8859-1\r\n\r\n`, 'latin1'));
+    chunks.push(Iso88591Encoder.encode(Iso88591Encoder.normalizeXmlDeclaration(signedXml)));
+    chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`, 'latin1'));
+    const response = await this.fetchWithRetry(uploadUrl, { method: 'POST', headers: { Cookie: `TOKEN=${token}`, 'Content-Type': `multipart/form-data; boundary=${boundary}`, Accept: 'text/xml, text/plain, */*' }, body: Buffer.concat(chunks) as unknown as BodyInit });
+    const responseText = await response.text();
+    if (!response.ok) throw new Error(`Upload RCOF SII HTTP ${response.status}: ${responseText.slice(0, 500)}`);
+    const trackId = this.extractFirst(responseText, ['TRACKID', 'trackid', 'TrackId', 'TRACK_ID']);
+    if (!trackId) throw new Error(`Respuesta upload RCOF SII sin TrackId: ${responseText.slice(0, 500)}`);
     return { trackId, status: 'ENVIADO' };
   }
 

@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -25,13 +33,21 @@ jobs:
           --health-retries 10
     env:
       POSTGRES_E2E_URL: postgres://postgres:postgres@127.0.0.1:5432/tax_api_e2e
+      SDD_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD' }}
+      INTEGRATION_WORKER_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run repo:check
+      - run: npm run sdd:test
+      - run: npm run sdd:check
       - run: npm run build
       - run: npm test -- --silent
       - run: npm run test:e2e -- --runInBand

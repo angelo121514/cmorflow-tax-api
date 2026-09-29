@@ -2,6 +2,13 @@ node_modules/
 dist/
 coverage/
 .env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.dump
+*.backup
 *.log
 tsconfig.tsbuildinfo
 

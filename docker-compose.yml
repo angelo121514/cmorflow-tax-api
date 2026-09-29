@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sii_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sii_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - tax-postgres:/var/lib/postgresql/data
+
+  migrate:
+    build: .
+    command: ["node", "start-migrate.js"]
+    env_file: .env.local
+    environment:
+      DB_HOST: postgres
+      DB_SSL: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: ["node", "start-prod.js"]
+    env_file: .env.local
+    environment:
+      DB_HOST: postgres
+      DB_SSL: "false"
+      INTEGRATION_WORKER_ENABLED: "false"
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: ["node", "start-worker.js"]
+    env_file: .env.local
+    environment:
+      DB_HOST: postgres
+      DB_SSL: "false"
+      INTEGRATION_WORKER_ENABLED: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  tax-postgres:

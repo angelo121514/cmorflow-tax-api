@@ -9,6 +9,7 @@ import { IntegrationWebhookService } from './integration-webhook.service';
 import { GenerateRcofUseCase } from './generate-rcof.use-case';
 import { IntegrationJobPort } from './integration-job.port';
 import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
+import { IntegrationRequestService } from './integration-request.service';
 
 /**
  * Orquestador del reconciler: un tick procesa la cola vencida, consulta el
@@ -28,6 +29,7 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
     private readonly webhookService: IntegrationWebhookService,
     private readonly generateRcofUseCase: GenerateRcofUseCase,
     private readonly metrics: PrometheusService,
+    private readonly requestService: IntegrationRequestService,
   ) {}
 
   /** Tick completo del reconciler (cron cada 5 min). */
@@ -79,10 +81,10 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
    * anterior (zona America/Santiago) y transmite el consumo de folios si aún
    * no existe. Idempotente por (tenant, fecha, secuencia=1).
    */
-  async rcofDaily(): Promise<{ tenantsChecked: number; generated: number; errors: string[] }> {
+  async rcofDaily(): Promise<{ tenantsChecked: number; enqueued: number; errors: string[] }> {
     const date = GenerateRcofUseCase.yesterdaySantiago();
     const tenants = await firstValueFrom(this.dataServices.tenant.getAll());
-    let generated = 0;
+    let enqueued = 0;
     const errors: string[] = [];
 
     for (const tenant of tenants) {
@@ -106,10 +108,17 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
         }
         await this.cls.run({} as any, async () => {
           this.cls.set('tenantId', tenant.id!);
-          const rcof = await this.generateRcofUseCase.execute(tenant.id!, { date, sequenceNumber: 1 });
-          if (rcof) {
-            generated++;
-          }
+          const payload = { date, sequenceNumber: 1 };
+          const { replayed } = await this.requestService.enqueue({
+            tenantId: tenant.id!,
+            credentialId: null,
+            kind: 'rcof',
+            idempotencyKey: `rcof-daily:${date}:1`,
+            rawBody: JSON.stringify(payload),
+            payload,
+            metadata: { source: 'rcof-daily' },
+          });
+          if (!replayed) enqueued++;
         });
       } catch (err) {
         // Sin boletas ese día es un 422 esperado; otros errores se registran.
@@ -119,7 +128,16 @@ export class IntegrationOrchestratorService implements IntegrationJobPort {
         }
       }
     }
-    this.logger.log(`rcofDaily ${date}: ${generated} RCOF generados, ${errors.length} errores`);
-    return { tenantsChecked: tenants.length, generated, errors };
+    if (enqueued > 0) {
+      try {
+        // Kick the same durable processor used by the worker. If it is down,
+        // the queued requests remain available for the next tick/restart.
+        await this.processor.processDue(enqueued);
+      } catch (err) {
+        this.logger.warn(`RCOF diarios encolados; el kick inmediato falló y se recuperarán luego: ${(err as Error).message}`);
+      }
+    }
+    this.logger.log(`rcofDaily ${date}: ${enqueued} solicitudes encoladas, ${errors.length} errores`);
+    return { tenantsChecked: tenants.length, enqueued, errors };
   }
 }
