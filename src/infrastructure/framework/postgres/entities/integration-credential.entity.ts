@@ -24,6 +24,9 @@ export class IntegrationCredentialEntity {
   @Column({ name: 'secret_encrypted', type: 'jsonb', nullable: true })
   secretEncrypted?: { iv: string; ciphertext: string; authTag: string; salt?: string } | null;
 
+  @Column({ name: 'signing_version', type: 'varchar', length: 8, default: 'v1' })
+  signingVersion?: 'v1' | 'v2';
+
   @Column({ name: 'secret_last4', type: 'varchar', length: 8 })
   secretLast4: string;
 

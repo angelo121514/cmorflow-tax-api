@@ -9,28 +9,34 @@
  *   npm run openapi:check   → falla (exit 1) si hay drift
  *   npm run openapi:update  → reescribe el baseline
  */
-process.env.NODE_ENV = process.env.NODE_ENV || 'test';
-process.env.SII_MASTER_KEY = process.env.SII_MASTER_KEY || 'openapi-drift-master-key-min32char';
-process.env.SII_INTEGRATION_MODE = process.env.SII_INTEGRATION_MODE || 'mock';
-process.env.SII_ENVIRONMENT = process.env.SII_ENVIRONMENT || 'certification';
-process.env.INTEGRATIONS_API_ENABLED = 'true';
+process.env.NODE_ENV = "test";
+process.env.SII_MASTER_KEY =
+  process.env.SII_MASTER_KEY || "openapi-drift-master-key-min32char";
+process.env.SII_INTEGRATION_MODE = "mock";
+process.env.SII_ENVIRONMENT = "certification";
+process.env.INTEGRATION_WORKER_ENABLED = "false";
+process.env.INTEGRATIONS_API_ENABLED = "true";
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from '../src/app.module';
-import { DataServicesModule } from '../src/infrastructure/data-service/data-service.module';
-import { FreshMemoryModule } from '../test/helpers/fresh-memory.module';
-import { DataSource } from 'typeorm';
-import { EntityManager } from 'typeorm';
-import { Global, Module } from '@nestjs/common';
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { Test } from "@nestjs/testing";
+import { INestApplication } from "@nestjs/common";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { AppModule } from "../src/app.module";
+import { DataServicesModule } from "../src/infrastructure/data-service/data-service.module";
+import { FreshMemoryModule } from "../test/helpers/fresh-memory.module";
+import { DataSource } from "typeorm";
+import { EntityManager } from "typeorm";
+import { Global, Module } from "@nestjs/common";
+import {
+  assertCompleteOpenApiContract,
+  completeOpenApiContract,
+} from "../src/infrastructure/swagger/api-contract";
 
 const DATA_SOURCE_STUB: DataSource = {
   isInitialized: true,
   entityMetadatas: [],
-  options: { type: 'postgres' },
+  options: { type: "postgres" },
   getRepository: () => ({}) as never,
   getTreeRepository: () => ({}) as never,
   getMongoRepository: () => ({}) as never,
@@ -54,16 +60,16 @@ class DataSourceStubModule {
   }
 }
 
-const BASELINE_PATH = resolve(__dirname, '..', 'ohbs-openapi.json');
-const UPDATE = process.argv.includes('--update');
+const BASELINE_PATH = resolve(__dirname, "..", "ohbs-openapi.json");
+const UPDATE = process.argv.includes("--update");
 
 function canonical(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
 }
 
 function diffPaths(generated: any, baseline: any): string[] {
@@ -87,62 +93,81 @@ async function main(): Promise<void> {
     .compile();
 
   const app: INestApplication = moduleRef.createNestApplication();
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix("api/v1");
   await app.init();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('CmorFlow Tax API')
+    .setTitle("CmorFlow Tax API")
     .setDescription(
-      'Plataforma tributaria B2B para facturación electrónica chilena vía API. ' +
-      'Emisión asíncrona de DTE, RCOF, webhooks y artefactos XML/PDF. ' +
-      'Autenticación HMAC por credencial ligada a un único tenant.',
+      "Plataforma tributaria B2B para facturación electrónica chilena vía API. " +
+        "Emisión asíncrona de DTE, RCOF, webhooks y artefactos XML/PDF. " +
+        "Autenticación HMAC por credencial ligada a un único tenant.",
     )
-    .setVersion('1.0')
+    .setVersion("1.0")
     .addApiKey(
       {
-        type: 'apiKey', in: 'header', name: 'X-Api-Key',
-        description: 'Autenticación HMAC. Requiere X-Timestamp, X-Nonce y X-Signature. Credenciales API: cmor_live_*, admin: cmor_admin_*.',
+        type: "apiKey",
+        in: "header",
+        name: "X-Api-Key",
+        description:
+          "Autenticación HMAC. Requiere X-Timestamp, X-Nonce y X-Signature. Credenciales API: cmor_live_*, admin: cmor_admin_*.",
       },
-      'integration-hmac',
+      "integration-hmac",
     )
-    .addTag('dtes', 'Emisión y consulta de DTE')
-    .addTag('rcof', 'Consumo de folios (RCOF)')
-    .addTag('credentials', 'Gestión de credenciales (admin)')
-    .addTag('webhooks', 'Gestión de webhooks (admin)')
-    .addTag('artifacts', 'Descarga de artefactos con URL firmada')
-    .addTag('health', 'Health checks')
+    .addTag("dtes", "Emisión y consulta de DTE")
+    .addTag("rcof", "Consumo de folios (RCOF)")
+    .addTag("credentials", "Gestión de credenciales (admin)")
+    .addTag("webhooks", "Gestión de webhooks (admin)")
+    .addTag("configuration", "Configuración tributaria y visual (admin)")
+    .addTag("artifacts", "Descarga de artefactos con URL firmada")
+    .addTag("health", "Health checks")
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = completeOpenApiContract(
+    SwaggerModule.createDocument(app, swaggerConfig),
+  );
+  assertCompleteOpenApiContract(document);
   await app.close();
 
   const generated = canonical(document);
 
   if (!existsSync(BASELINE_PATH) || UPDATE) {
-    writeFileSync(BASELINE_PATH, JSON.stringify(document, null, 2) + '\n', 'utf-8');
-    console.log(`Baseline OpenAPI actualizado: ${BASELINE_PATH} (${Object.keys(document.paths || {}).length} paths)`);
+    writeFileSync(
+      BASELINE_PATH,
+      JSON.stringify(document, null, 2) + "\n",
+      "utf-8",
+    );
+    console.log(
+      `Baseline OpenAPI actualizado: ${BASELINE_PATH} (${Object.keys(document.paths || {}).length} paths)`,
+    );
     return;
   }
 
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'));
+  const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf-8"));
   const baselineCanonical = canonical(baseline);
 
   if (generated === baselineCanonical) {
-    console.log(`OpenAPI sin drift: ${Object.keys(document.paths || {}).length} paths coinciden con el baseline.`);
+    console.log(
+      `OpenAPI sin drift: ${Object.keys(document.paths || {}).length} paths coinciden con el baseline.`,
+    );
     return;
   }
 
   const diffs = diffPaths(document, baseline);
-  console.error('OpenAPI drift detectado. Diferencias en paths:');
+  console.error("OpenAPI drift detectado. Diferencias en paths:");
   diffs.forEach((d) => console.error(d));
   if (diffs.length === 0) {
-    console.error('(Sin diferencias en paths — el drift es en schemas o responses.)');
+    console.error(
+      "(Sin diferencias en paths — el drift es en schemas o responses.)",
+    );
   }
-  console.error('\nSi el cambio es intencional:\n  1. npm run openapi:update\n  2. revisar el diff y commitear');
+  console.error(
+    "\nSi el cambio es intencional:\n  1. npm run openapi:update\n  2. revisar el diff y commitear",
+  );
   process.exit(1);
 }
 
 main().catch((err) => {
-  console.error('Error:', err);
+  console.error("Error:", err);
   process.exit(1);
 });

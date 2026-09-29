@@ -8,6 +8,7 @@ import {
   IntegrationWebhookEventEntity,
   IntegrationWebhookDeliveryEntity,
   DteDocumentEntity,
+  InvoiceBrandProfileEntity,
   SiiSubmissionEntity,
   TenantEntity,
   AuditLogEntity,
@@ -16,7 +17,7 @@ import { IGenericRepository } from './generic-repository.abstract';
 
 /**
  * Interfaz reducida de persistencia para la Tax API.
- * Sólo los 11 repositorios que el motor tributario + integrations usan.
+ * Sólo los repositorios que el motor tributario + integrations usan.
  * tenant-config se gestiona vía repositorio TypeORM directo en SiiModule.
  */
 export abstract class IDataServices {
@@ -28,6 +29,7 @@ export abstract class IDataServices {
   abstract integrationWebhookEvent: IGenericRepository<IntegrationWebhookEventEntity>;
   abstract integrationWebhookDelivery: IGenericRepository<IntegrationWebhookDeliveryEntity>;
   abstract dteDocument: IGenericRepository<DteDocumentEntity>;
+  abstract invoiceBrandProfile: IGenericRepository<InvoiceBrandProfileEntity>;
   abstract siiSubmission: IGenericRepository<SiiSubmissionEntity>;
   abstract tenant: IGenericRepository<TenantEntity>;
   abstract auditLog: IGenericRepository<AuditLogEntity>;

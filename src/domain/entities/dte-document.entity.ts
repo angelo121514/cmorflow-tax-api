@@ -7,6 +7,8 @@ export class DteDocumentEntity {
   receiverName: string;
   amount: number;
   xmlContent: string;
+  /** Perfil visual inmutable vigente al momento de emitir el DTE. */
+  brandProfileId?: string | null;
   signatureValue?: string;
   status: 'BORRADOR' | 'FIRMADO' | 'ENVIADO' | 'ACEPTADO' | 'RECHAZADO' | 'REPARO' | 'ANULADO';
   trackId?: string;

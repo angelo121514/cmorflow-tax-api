@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, Unique } from 'typeorm';
 
 @Entity('integration_requests')
-@Unique('uq_integration_requests_tenant_key', ['tenantId', 'idempotencyKey'])
+@Unique('uq_integration_requests_tenant_key', ['tenantId', 'kind', 'resourceKey', 'idempotencyKey'])
 @Unique('uq_integration_requests_tenant_extref', ['tenantId', 'externalReference'])
 @Index('idx_integration_requests_state_next_attempt', ['state', 'nextAttemptAt'])
 @Index('idx_integration_requests_tenant_state', ['tenantId', 'state'])
@@ -18,6 +18,9 @@ export class IntegrationRequestEntity {
 
   @Column({ name: 'idempotency_key', type: 'varchar' })
   idempotencyKey: string;
+
+  @Column({ name: 'resource_key', type: 'varchar', default: '' })
+  resourceKey: string;
 
   @Column({ name: 'request_hash', type: 'varchar' })
   requestHash: string;
@@ -48,8 +51,8 @@ export class IntegrationRequestEntity {
   @Column({ name: 'rcof_id', type: 'uuid', nullable: true })
   rcofId?: string | null;
 
-  @Column({ name: 'origin_credential_id', type: 'uuid' })
-  originCredentialId: string;
+  @Column({ name: 'origin_credential_id', type: 'uuid', nullable: true })
+  originCredentialId: string | null;
 
   @Column({ name: 'attempts', type: 'integer', default: 0 })
   attempts: number;

@@ -152,6 +152,6 @@ export class DtesController {
     };
     const { totals } = this.requestService.validatePayloadAndTotals(payload, { allowNoteTypes: true });
     payload.serverTotals = totals;
-    return this.helper.enqueueAndKick(tenantId, request.integrationCredential.id, kind, idempotencyKey!, request.rawBody, payload);
+    return this.helper.enqueueAndKick(tenantId, request.integrationCredential.id, kind, idempotencyKey!, request.rawBody, payload, originalDteId);
   }
 }

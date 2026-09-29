@@ -3,9 +3,9 @@ import { IntegrationSignatureUtil } from './integration-signature.util';
 
 describe('IntegrationSignatureUtil — contrato de firma B2B', () => {
   const secret = 'cmc_test_secret';
-  const signingKey = IntegrationSignatureUtil.hashSecret(secret);
+  const signingKey = secret;
 
-  it('el hash del secreto sirve como clave de firma verificable (cliente y servidor derivan igual)', () => {
+  it('el secreto sirve como clave de firma verificable en el protocolo v2', () => {
     const canonical = IntegrationSignatureUtil.canonicalString(
       'POST',
       '/api/v1/dtes',

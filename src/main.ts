@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { assertCompleteOpenApiContract, completeOpenApiContract } from './infrastructure/swagger/api-contract';
 import { GlobalExceptionFilter } from './infrastructure/filters/global-exception.filter';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
@@ -79,6 +80,7 @@ async function bootstrap() {
     .addTag('rcof', 'Consumo de folios (RCOF)')
     .addTag('credentials', 'Gestión de credenciales (admin)')
     .addTag('webhooks', 'Gestión de webhooks (admin)')
+    .addTag('configuration', 'Configuración tributaria y visual (admin)')
     .addTag('health', 'Health checks')
     .build();
 
@@ -99,7 +101,8 @@ async function bootstrap() {
   }
 
   if (docsEnabled) {
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    const document = completeOpenApiContract(SwaggerModule.createDocument(app, swaggerConfig));
+    assertCompleteOpenApiContract(document);
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: { persistAuthorization: process.env.NODE_ENV !== 'production' },
       customSiteTitle: 'CmorFlow Tax API — Docs',

@@ -112,7 +112,15 @@ export class IntegrationArtifactsService {
       );
     }
     const tenant = await firstValueFrom(this.dataServices.tenant.get(tenantId));
-    const pdf = await this.pdfGenerator.generateDtePdf(dte, tenant);
+    // Un DTE nuevo fija su marca al ser emitido. Si la referencia existe pero
+    // no puede recuperarse, no regeneramos un histórico con otra identidad.
+    const brandProfile = dte.brandProfileId
+      ? await firstValueFrom(this.dataServices.invoiceBrandProfile.get(dte.brandProfileId))
+      : null;
+    if (dte.brandProfileId && !brandProfile) {
+      throw new Error(`No se encontró el perfil visual ${dte.brandProfileId} asociado al DTE ${dte.id}.`);
+    }
+    const pdf = await this.pdfGenerator.generateDtePdf(dte, tenant, brandProfile);
     return { dte, pdf };
   }
 }

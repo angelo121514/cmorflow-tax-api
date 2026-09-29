@@ -50,13 +50,12 @@ describe('GenerateRcofUseCase — consolidación, persistencia y transmisión', 
       buildRcof: jest.fn((input: any) =>
         `<ConsumoFolio><FchInicio>${input.startDate}</FchInicio><Secuencia>${input.sequenceNumber}</Secuencia></ConsumoFolio>`,
       ),
-      buildEnvioBoleta: jest.fn(() => '<EnvioBOLETA></EnvioBOLETA>'),
     };
     const signatureEngine: any = {
       signXml: jest.fn((xml: string) => ({ signedXml: xml + '<SIG/>', signatureValue: 'sig' })),
     };
     soapClient = {
-      sendDteEnvelope: jest.fn().mockReturnValue(of({ trackId: 'TRACK-RCOF-1' })),
+      sendRcof: jest.fn().mockReturnValue(of({ trackId: 'TRACK-RCOF-1' })),
       queryTrackStatus: jest.fn().mockReturnValue(of({ status: 'PROCESANDO' })),
     };
     tokenService = { getToken: jest.fn().mockResolvedValue('token-sii') };
@@ -90,7 +89,7 @@ describe('GenerateRcofUseCase — consolidación, persistencia y transmisión', 
     expect(rcof.trackId).toBe('TRACK-RCOF-1');
     expect(rcof.periodDate).toBe(date);
     expect(rcof.xmlContent).toContain('<ConsumoFolio>');
-    expect(soapClient.sendDteEnvelope).toHaveBeenCalledTimes(1);
+    expect(soapClient.sendRcof).toHaveBeenCalledTimes(1);
 
     // La consolidación del resumen refleja 3 emitidos / 1 anulado / 2 utilizados.
     const signedArg = (useCase as any)['dteXmlEngine'].buildRcof.mock.calls[0][0];
@@ -108,7 +107,7 @@ describe('GenerateRcofUseCase — consolidación, persistencia y transmisión', 
     const first = await useCase.execute(tenantId, { date });
     const second = await useCase.execute(tenantId, { date });
     expect(second.id).toBe(first.id);
-    expect(soapClient.sendDteEnvelope).toHaveBeenCalledTimes(1);
+    expect(soapClient.sendRcof).toHaveBeenCalledTimes(1);
     const all = await dataServices.rcofSubmission.getAll().toPromise();
     expect(all).toHaveLength(1);
   });

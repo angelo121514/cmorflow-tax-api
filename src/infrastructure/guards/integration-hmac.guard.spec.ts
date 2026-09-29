@@ -69,7 +69,9 @@ function makeContext(overrides: any = {}, credential = seededCredential()) {
     req.headers['x-signature'] =
       overrides.signature ??
       IntegrationSignatureUtil.sign(
-        IntegrationSignatureUtil.hashSecret(overrides.secret ?? SECRET),
+        credential.signingVersion === 'v2' && !overrides.legacySigning
+          ? (overrides.secret ?? SECRET)
+          : IntegrationSignatureUtil.hashSecret(overrides.secret ?? SECRET),
         canonical,
       );
   }
@@ -89,10 +91,26 @@ describe('IntegrationHmacGuard — clave de firma derivada del secreto cifrado',
     const cipher = new Aes256Cipher();
     const credential = seededCredential({
       secretEncrypted: cipher.encrypt(SECRET, MASTER_KEY),
+      signingVersion: 'v2',
     });
     const { guard } = buildGuard(credential);
     const { ctx } = makeContext({}, credential);
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('v2 rechaza una firma construida sólo con el hash persistido', async () => {
+    const cipher = new Aes256Cipher();
+    const credential = seededCredential({ secretEncrypted: cipher.encrypt(SECRET, MASTER_KEY), signingVersion: 'v2' });
+    const { guard } = buildGuard(credential);
+    const { ctx } = makeContext({ legacySigning: true }, credential);
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({ response: { error: { code: 'INVALID_SIGNATURE' } } });
+  });
+
+  it('v2 rechaza una firma con el hash si falta el secreto cifrado, sin degradar a v1', async () => {
+    const credential = seededCredential({ signingVersion: 'v2', secretEncrypted: null });
+    const { guard } = buildGuard(credential);
+    const { ctx } = makeContext({ legacySigning: true }, credential);
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({ response: { error: { code: 'INVALID_SIGNATURE' } } });
   });
 
   it('rechaza (fail-closed) si el secreto cifrado no descifra con la master key actual', async () => {

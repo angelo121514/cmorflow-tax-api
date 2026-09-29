@@ -1,304 +1,386 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as PDFDocument from 'pdfkit';
 import * as bwipjs from 'bwip-js';
+import { buildDtePrintModel, DtePrintAdjustment, DtePrintModel } from './dte-print.model';
+import {
+  DEFAULT_INVOICE_PRIMARY_COLOR,
+  DEFAULT_INVOICE_SECONDARY_COLOR,
+} from './invoice-branding.defaults';
 
+export interface PdfBrandProfile {
+  logoData?: Buffer | null;
+  logoMimeType?: string | null;
+  primaryColor?: string;
+  secondaryColor?: string;
+}
+
+interface PrintColors {
+  primary: string;
+  secondaryTint: string;
+  text: string;
+  muted: string;
+  line: string;
+  legal: string;
+}
+
+const PAGE_LEFT = 40;
+const PAGE_RIGHT = 555;
+const PAGE_WIDTH = PAGE_RIGHT - PAGE_LEFT;
+const PAGE_BOTTOM = 790;
+const BODY_BOTTOM = 675;
+
+/**
+ * Generador A4 de representación gráfica. Todos los datos tributarios que se
+ * imprimen provienen del XML firmado del DTE; la marca sólo cambia elementos
+ * visuales y queda fijada por la versión asociada al documento emitido.
+ */
 @Injectable()
 export class PdfGenerator {
   private readonly logger = new Logger(PdfGenerator.name);
 
-  /**
-   * Genera el búfer PDF de cualquier Documento Tributario Electrónico (DTE) de Chile.
-   * Diseña plantillas dinámicas según el tipo de documento (Facturas, Boletas, Guías, Notas).
-   */
-  public async generateDtePdf(dte: any, tenant: any): Promise<Buffer> {
-    this.logger.log(`Generando PDF A4 de Alta Fidelidad para DTE Folio ${dte.folio} (Tipo ${dte.type})...`);
+  public async generateDtePdf(
+    dte: { type?: number; folio?: number; xmlContent?: string },
+    _tenant?: unknown,
+    brandProfile?: PdfBrandProfile | null,
+  ): Promise<Buffer> {
+    const model = buildDtePrintModel(dte.xmlContent || '');
+    if (dte.type !== undefined && Number(dte.type) !== model.type) {
+      throw new Error('El tipo almacenado del DTE no coincide con el XML firmado; se bloquea la generación del PDF.');
+    }
+    if (dte.folio !== undefined && Number(dte.folio) !== model.folio) {
+      throw new Error('El folio almacenado del DTE no coincide con el XML firmado; se bloquea la generación del PDF.');
+    }
 
-    return new Promise<Buffer>(async (resolve, reject) => {
+    this.logger.log(`Generando PDF A4 para DTE ${model.type}/${model.folio} desde su XML firmado.`);
+    // Si el TED no puede convertirse a PDF417, no se entrega un PDF que parezca
+    // válido pero que carezca de su timbre electrónico.
+    const barcode = await this.generatePdf417(model.tedXml);
+    const colors = this.resolveColors(brandProfile);
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margin: PAGE_LEFT, autoFirstPage: true });
+      const chunks: Buffer[] = [];
+      let settled = false;
+      const finishReject = (error: unknown) => {
+        if (!settled) {
+          settled = true;
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('error', finishReject);
+      doc.on('end', () => {
+        if (!settled) {
+          settled = true;
+          resolve(Buffer.concat(chunks));
+        }
+      });
+
       try {
-        const doc = new PDFDocument({ size: 'A4', margin: 40 });
-        const buffers: Buffer[] = [];
+        let page = 1;
+        let currentY = this.drawPageHeader(doc, model, brandProfile, colors, page);
+        const nextPage = () => {
+          doc.addPage({ size: 'A4', margin: PAGE_LEFT });
+          page += 1;
+          return this.drawPageHeader(doc, model, brandProfile, colors, page);
+        };
 
-        doc.on('data', (chunk) => buffers.push(chunk));
-        doc.on('end', () => resolve(Buffer.concat(buffers)));
+        currentY = this.drawReceiver(doc, model, currentY, colors);
+        currentY = this.drawTransport(doc, model, currentY, colors);
 
-        const dteTitle = this.getDteTitle(dte.type);
-
-        // 1. DIBUJAR RECUADRO ROJO REGLAMENTARIO (SII) - ESQUINA SUPERIOR DERECHA
-        doc.lineWidth(2.5);
-        doc.strokeColor('#D32F2F'); // Rojo Oficial
-        doc.rect(340, 40, 220, 100).stroke();
-
-        // Líneas internas del recuadro rojo
-        doc.lineWidth(1);
-        doc.lineCap('square');
-        doc.moveTo(340, 75).lineTo(560, 75).stroke();
-        doc.moveTo(340, 110).lineTo(560, 110).stroke();
-
-        // Texto del recuadro rojo
-        doc.fillColor('#D32F2F');
-        doc.fontSize(11).font('Helvetica-Bold');
-        doc.text(`R.U.T.: ${this.formatRut(tenant.rut)}`, 345, 50, { width: 210, align: 'center' });
-        doc.fontSize(8);
-        doc.text(dteTitle, 345, 87, { width: 210, align: 'center' });
-        doc.fontSize(11);
-        doc.text(`N° ${dte.folio}`, 345, 120, { width: 210, align: 'center' });
-
-        // 2. LOGO / DATOS DEL EMISOR (ESQUINA SUPERIOR IZQUIERDA)
-        doc.fillColor('#2C3E50'); // Azul corporativo oscuro
-        doc.fontSize(18).font('Helvetica-Bold');
-        doc.text(tenant.businessName.toUpperCase(), 40, 40, { width: 280 });
-        
-        doc.fillColor('#7F8C8D'); // Gris
-        doc.fontSize(8.5).font('Helvetica');
-        const emitterName = tenant.businessName?.toUpperCase();
-        if (!emitterName) {
-          throw new Error('El tenant no tiene businessName configurado. No se puede generar PDF tributario válido.');
+        if (model.references.length > 0) {
+          currentY = this.drawReferences(doc, model, currentY, colors, nextPage).currentY;
         }
-        doc.text(emitterName, 40, 62);
-        doc.text(`Giro: ${tenant.giro || ''}`, 40, 74);
-        doc.text(`Dirección: ${tenant.address || ''}`, 40, 86);
-        doc.text(`S.I.I.: ${tenant.siiOffice || ''}`, 40, 98);
 
-        // Línea divisoria decorativa
-        doc.lineWidth(0.5);
-        doc.strokeColor('#BDC3C7');
-        doc.moveTo(40, 155).lineTo(560, 155).stroke();
+        currentY = this.drawDetails(doc, model, currentY, colors, nextPage).currentY;
 
-        // 3. DATOS DEL RECEPTOR Y DOCUMENTO
-        const fechaEmis = dte.createdAt ? new Date(dte.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-        
-        doc.fillColor('#2C3E50');
-        doc.fontSize(9.5).font('Helvetica-Bold');
-        doc.text('DATOS DEL RECEPTOR', 40, 170);
-
-        doc.lineWidth(0.5).strokeColor('#ECF0F1');
-        doc.rect(40, 185, 520, 70).fillAndStroke('#FAFAFA', '#BDC3C7');
-
-        doc.fillColor('#2C3E50');
-        doc.font('Helvetica-Bold').fontSize(8.5);
-        doc.text('Señor(es):', 50, 195);
-        doc.text('R.U.T.:', 50, 210);
-        doc.text('Giro:', 50, 225);
-        doc.text('Dirección:', 50, 240);
-
-        doc.font('Helvetica').fillColor('#34495E');
-        doc.text((dte.receiverName || 'PERSONA NATURAL').toUpperCase(), 110, 195);
-        doc.text(this.formatRut(dte.receiverRut || '66666666-6'), 110, 210);
-        doc.text((dte.receiverGiro || '').toUpperCase(), 110, 225);
-        doc.text(dte.receiverAddress || '', 110, 240);
-
-        // Datos del documento en el mismo cuadro (lado derecho)
-        doc.font('Helvetica-Bold').fillColor('#2C3E50');
-        doc.text('Fecha de Emisión:', 360, 195);
-        doc.text('Tipo de Moneda:', 360, 210);
-        doc.text('Forma de Pago:', 360, 225);
-
-        doc.font('Helvetica').fillColor('#34495E');
-        doc.text(fechaEmis, 460, 195);
-        doc.text('Pesos Chilenos (CLP)', 460, 210);
-        doc.text('Crédito / Cuenta Corriente', 460, 225);
-
-        let currentY = 265;
-
-        // 4. SECCIÓN ESPECIAL PARA GUÍAS DE DESPACHO (DTE 52)
-        if (dte.type === 52) {
-          doc.fillColor('#2C3E50').font('Helvetica-Bold').fontSize(9.5);
-          doc.text('DATOS DE DESPACHO Y TRANSPORTE', 40, currentY + 10);
-          
-          doc.rect(40, currentY + 25, 520, 45).fillAndStroke('#F2F4F4', '#BDC3C7');
-          doc.fillColor('#2C3E50').font('Helvetica-Bold').fontSize(8);
-          
-          doc.text('Patente Camión:', 50, currentY + 33);
-          doc.text('Nombre Chofer:', 50, currentY + 45);
-          doc.text('RUT Chofer:', 50, currentY + 57);
- 
-          doc.font('Helvetica').fillColor('#34495E');
-          doc.text(dte.truckPlate || '', 140, currentY + 33);
-          doc.text((dte.driverName || '').toUpperCase(), 140, currentY + 45);
-          doc.text(dte.driverRut || '15.489.123-K', 140, currentY + 57);
- 
-          doc.font('Helvetica-Bold').fillColor('#2C3E50');
-          doc.text('Tipo de Traslado:', 320, currentY + 33);
-          doc.text('Dirección Destino:', 320, currentY + 45);
- 
-          doc.font('Helvetica').fillColor('#34495E');
-          doc.text(dte.shippingType || 'Venta de Productos', 410, currentY + 33);
-          doc.text(dte.deliveryAddress || 'Av. Providencia 1200, Santiago', 410, currentY + 45);
- 
-          currentY += 80;
+        const totalsHeight = this.totalsHeight(model);
+        if (currentY + totalsHeight + 130 > PAGE_BOTTOM) {
+          currentY = nextPage();
         }
- 
-        // 5. SECCIÓN ESPECIAL PARA NOTAS DE CRÉDITO / DÉBITO (DTE 61/56)
-        const hasReferences = dte.type === 61 || dte.type === 56;
-        if (hasReferences) {
-          doc.fillColor('#2C3E50').font('Helvetica-Bold').fontSize(9.5);
-          doc.text('DOCUMENTOS DE REFERENCIA', 40, currentY + 10);
- 
-          const refY = currentY + 25;
-          doc.rect(40, refY, 520, 15).fill('#34495E');
-          doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7.5);
-          
-          doc.text('Línea', 45, refY + 4, { width: 30, align: 'center' });
-          doc.text('Tipo Doc Referenciado', 85, refY + 4, { width: 120 });
-          doc.text('Folio Ref', 215, refY + 4, { width: 60 });
-          doc.text('Fecha Documento', 285, refY + 4, { width: 85 });
-          doc.text('Razón / Motivo de la Referencia', 380, refY + 4, { width: 170 });
- 
-          // Renderizar referencias reales asociadas o una simulada
-          const references = dte.references || [
-            {
-              lineIndex: 1,
-              refDocType: dte.referencedDocType || 33,
-              refFolio: dte.referencedFolio || 15,
-              refDate: fechaEmis,
-              reason: dte.referenceReason || 'Anulación de documento por error de facturación'
-            }
-          ];
- 
-          references.forEach((ref: any, idx: number) => {
-            const rowY = refY + 15 + (idx * 16);
-            if (idx % 2 === 1) {
-              doc.rect(40, rowY, 520, 16).fill('#F9FAFC');
-            } else {
-              doc.rect(40, rowY, 520, 16).fill('#FFFFFF');
-            }
-            doc.fillColor('#2C3E50').font('Helvetica').fontSize(8);
-            
-            doc.text(String(ref.lineIndex || idx + 1), 45, rowY + 4, { width: 30, align: 'center' });
-            doc.text(this.getDteTitle(Number(ref.refDocType)), 85, rowY + 4, { width: 120 });
-            doc.text(String(ref.refFolio), 215, rowY + 4, { width: 60 });
-            doc.text(ref.refDate, 285, rowY + 4, { width: 85 });
-            doc.text(ref.reason, 380, rowY + 4, { width: 170 });
- 
-            doc.lineWidth(0.5).strokeColor('#BDC3C7');
-            doc.moveTo(40, rowY + 16).lineTo(560, rowY + 16).stroke();
-          });
- 
-          currentY += 40 + (references.length * 16);
+        currentY = this.drawTotals(doc, model, currentY, colors);
+
+        if (currentY + 120 > PAGE_BOTTOM) {
+          currentY = nextPage();
         }
- 
-        // 6. TABLA DE DETALLES DE ÍTEMS
-        doc.fillColor('#2C3E50').font('Helvetica-Bold').fontSize(9.5);
-        doc.text('DETALLE DE LA TRANSACCIÓN', 40, currentY + 10);
- 
-        // Cabeceras de la Tabla
-        const thY = currentY + 25;
-        doc.rect(40, thY, 520, 18).fill('#34495E');
- 
-        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8);
-        doc.text('Línea', 45, thY + 5, { width: 30, align: 'center' });
-        doc.text('Descripción del Ítem / Servicio', 85, thY + 5, { width: 220 });
-        doc.text('Cant.', 315, thY + 5, { width: 40, align: 'center' });
-        doc.text('P. Unitario', 365, thY + 5, { width: 80, align: 'right' });
-        doc.text('Descto.', 455, thY + 5, { width: 40, align: 'right' });
-        doc.text('Total Ítem', 505, thY + 5, { width: 50, align: 'right' });
- 
-        // Filas de Ítems
-        let itemY = thY + 18;
-        
-        const items = dte.items || [
-          { name: 'Desarrollo de Software B2B Multi-tenant', quantity: 1, price: dte.amount }
-        ];
- 
-        doc.fillColor('#2C3E50').font('Helvetica').fontSize(8);
-        items.forEach((item: any, index: number) => {
-          if (index % 2 === 1) {
-            doc.rect(40, itemY, 520, 16).fill('#F9FAFC');
-            doc.fillColor('#2C3E50');
-          }
- 
-          const itemTotal = Math.round(item.quantity * item.price);
- 
-          doc.text((index + 1).toString(), 45, itemY + 4, { width: 30, align: 'center' });
-          doc.text(item.name, 85, itemY + 4, { width: 220 });
-          doc.text(item.quantity.toString(), 315, itemY + 4, { width: 40, align: 'center' });
-          doc.text(this.formatCurrency(item.price), 365, itemY + 4, { width: 80, align: 'right' });
-          doc.text('0%', 455, itemY + 4, { width: 40, align: 'right' });
-          doc.text(this.formatCurrency(itemTotal), 505, itemY + 4, { width: 50, align: 'right' });
- 
-          itemY += 16;
-        });
- 
-        // Dibujar borde inferior de la tabla
-        doc.lineWidth(0.5).strokeColor('#BDC3C7');
-        doc.moveTo(40, itemY).lineTo(560, itemY).stroke();
- 
-        // 7. SECCIÓN DE TOTALES (LADO INFERIOR DERECHO)
-        const totalY = itemY + 15;
-        const totalAmount = Math.round(dte.amount);
-        const isExempt = dte.type === 34 || dte.type === 41;
-        
-        const netAmount = isExempt ? 0 : Math.round(totalAmount / 1.19);
-        const ivaAmount = isExempt ? 0 : totalAmount - netAmount;
-        const exemptAmount = isExempt ? totalAmount : 0;
- 
-        doc.fillColor('#2C3E50').font('Helvetica-Bold').fontSize(8.5);
-        if (!isExempt) {
-          doc.text('Monto Neto:', 380, totalY);
-          doc.text('I.V.A. (19%):', 380, totalY + 15);
-        } else {
-          doc.text('Monto Exento:', 380, totalY);
-        }
-        doc.fillColor('#D32F2F'); // Resaltar total en rojo
-        doc.text('Monto Total:', 380, totalY + (isExempt ? 15 : 30));
- 
-        doc.fillColor('#34495E').font('Helvetica').fontSize(8.5);
-        if (!isExempt) {
-          doc.text(this.formatCurrency(netAmount), 480, totalY, { width: 75, align: 'right' });
-          doc.text(this.formatCurrency(ivaAmount), 480, totalY + 15, { width: 75, align: 'right' });
-        } else {
-          doc.text(this.formatCurrency(exemptAmount), 480, totalY, { width: 75, align: 'right' });
-        }
-        doc.fillColor('#D32F2F').font('Helvetica-Bold');
-        doc.text(this.formatCurrency(totalAmount), 480, totalY + (isExempt ? 15 : 30), { width: 75, align: 'right' });
- 
-        // 8. TIMBRE ELECTRÓNICO DTE (TED) - SECCIÓN INFERIOR
-        const tedStartY = 540;
- 
-        // Extraer de forma estricta y dinámica el nodo <TED> del XML de base de datos.
-        // Un DTE sin TED firmado válido NO puede representarse como PDF tributario (Ley 19.983).
-        const xmlToEncode = dte.xmlContent || '';
-        const tedMatch = /(<TED\b[^>]*>[\s\S]*?<\/TED>)/i.exec(xmlToEncode);
-        if (!tedMatch) {
-          throw new Error(
-            `No se puede generar PDF: el DTE folio ${dte.folio} (tipo ${dte.type}) no tiene un nodo TED firmado válido en su XML. ` +
-            `Un documento tributario sin TED no es legalmente válido.`
-          );
-        }
-        const tedData = tedMatch[1].trim();
- 
-        try {
-          this.logger.log('Codificando contenido XML real y firmado del TED en matriz PDF417...');
-          const pdf417PngBuffer = await this.generatePdf417(tedData);
- 
-          // Dibujar el código de barras en el documento
-          doc.image(pdf417PngBuffer, 40, tedStartY, { width: 260, height: 95 });
- 
-          // Dibujar recuadro e instructivo legal al lado del timbre
-          doc.strokeColor('#D32F2F').lineWidth(1);
-          doc.rect(320, tedStartY, 240, 95).stroke();
- 
-          doc.fillColor('#D32F2F').font('Helvetica-Bold').fontSize(8.5);
-          doc.text('Timbre Electrónico S.I.I.', 330, tedStartY + 10, { width: 220, align: 'center' });
-          doc.fillColor('#7F8C8D').font('Helvetica').fontSize(7.2);
-          doc.text('Res. N° 80 de 2014 del S.I.I.', 330, tedStartY + 25, { width: 220, align: 'center' });
-          doc.text('El acuse de recibo de este documento que se declare en el sitio web del S.I.I. es obligatorio para ejercer el derecho a crédito fiscal.', 330, tedStartY + 40, { width: 220, align: 'justify' });
-          doc.text('Verifique documento en www.sii.cl', 330, tedStartY + 75, { width: 220, align: 'center' });
- 
-        } catch (barcodeError) {
-          this.logger.error('Error generando matriz PDF417 para el TED:', barcodeError);
-          doc.strokeColor('#E74C3C').rect(40, tedStartY, 260, 95).stroke();
-          doc.fillColor('#C0392B').font('Helvetica-Bold').fontSize(8);
-          doc.text('[ ERROR AL GENERAR CÓDIGO PDF417 ]', 50, tedStartY + 40, { width: 240, align: 'center' });
-        }
- 
-        // Finalizar el documento
+        this.drawTed(doc, barcode, currentY, colors);
         doc.end();
- 
       } catch (error) {
-        this.logger.error('Excepción al renderizar el documento PDF:', error);
-        reject(error);
+        this.logger.error('No se pudo renderizar el PDF tributario.', error instanceof Error ? error.stack : String(error));
+        finishReject(error);
+        doc.end();
       }
+    });
+  }
+
+  /** Expuesto para pruebas de fidelidad entre el XML firmado y el PDF. */
+  public buildPrintModel(xml: string): DtePrintModel {
+    return buildDtePrintModel(xml);
+  }
+
+  private drawPageHeader(
+    doc: PDFKit.PDFDocument,
+    model: DtePrintModel,
+    profile: PdfBrandProfile | null | undefined,
+    colors: PrintColors,
+    page: number,
+  ): number {
+    const hasLogo = !!profile?.logoData?.length;
+    if (hasLogo) {
+      doc.image(profile!.logoData!, PAGE_LEFT, 38, { fit: [220, 58], valign: 'center' });
+    } else {
+      doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(16);
+      doc.text(model.emitter.businessName.toUpperCase(), PAGE_LEFT, 40, { width: 278, height: 34 });
+    }
+
+    const companyInfoY = hasLogo ? 102 : 74;
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(8.5);
+    doc.text(model.emitter.businessName.toUpperCase(), PAGE_LEFT, companyInfoY, { width: 280, height: 11 });
+    doc.font('Helvetica').fontSize(7.5).fillColor(colors.muted);
+    const issuerLines = [
+      model.emitter.giro,
+      [model.emitter.address, model.emitter.commune, model.emitter.city].filter(Boolean).join(', '),
+    ].filter(Boolean);
+    doc.text(issuerLines.join('\n'), PAGE_LEFT, companyInfoY + 12, { width: 280, height: 28 });
+
+    // Recuadro tributario reservado: color legal y datos sólo desde el XML.
+    const legalX = 340;
+    const legalY = 38;
+    doc.lineWidth(1.7).strokeColor(colors.legal).rect(legalX, legalY, 215, 94).stroke();
+    doc.lineWidth(0.7).moveTo(legalX, legalY + 32).lineTo(legalX + 215, legalY + 32).stroke();
+    doc.moveTo(legalX, legalY + 63).lineTo(legalX + 215, legalY + 63).stroke();
+    doc.fillColor(colors.legal).font('Helvetica-Bold').fontSize(10);
+    doc.text(`R.U.T.: ${this.formatRut(model.emitter.rut)}`, legalX + 4, legalY + 10, { width: 207, align: 'center' });
+    doc.fontSize(7.2);
+    doc.text(this.getDteTitle(model.type), legalX + 7, legalY + 43, { width: 201, align: 'center' });
+    doc.fontSize(10.5);
+    doc.text(`N° ${model.folio}`, legalX + 4, legalY + 72, { width: 207, align: 'center' });
+
+    doc.lineWidth(1.4).strokeColor(colors.primary).moveTo(PAGE_LEFT, 146).lineTo(PAGE_RIGHT, 146).stroke();
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(6.5);
+    doc.text(`Página ${page}`, PAGE_RIGHT - 52, 138, { width: 52, align: 'right' });
+    return 160;
+  }
+
+  private drawReceiver(doc: PDFKit.PDFDocument, model: DtePrintModel, startY: number, colors: PrintColors): number {
+    this.drawSectionTitle(doc, 'DATOS DEL RECEPTOR', startY, colors);
+    const boxY = startY + 16;
+    const boxHeight = 86;
+    doc.fillColor(colors.secondaryTint).strokeColor(colors.line).lineWidth(0.6).rect(PAGE_LEFT, boxY, PAGE_WIDTH, boxHeight).fillAndStroke();
+
+    const leftRows: Array<[string, string]> = [
+      ['Señor(es):', model.receiver.businessName],
+      ['R.U.T.:', this.formatRut(model.receiver.rut)],
+      ['Giro:', model.receiver.giro || '—'],
+      ['Dirección:', [model.receiver.address, model.receiver.commune, model.receiver.city].filter(Boolean).join(', ') || '—'],
+    ];
+    const rightRows: Array<[string, string]> = [
+      ['Fecha de emisión:', model.issueDate],
+      ['Tipo de documento:', this.getDteTitle(model.type)],
+      ['Folio:', String(model.folio)],
+    ];
+    this.drawRows(doc, leftRows, PAGE_LEFT + 10, boxY + 9, 290, colors);
+    this.drawRows(doc, rightRows, 350, boxY + 9, 195, colors);
+    return boxY + boxHeight + 16;
+  }
+
+  private drawTransport(doc: PDFKit.PDFDocument, model: DtePrintModel, startY: number, colors: PrintColors): number {
+    const transport = model.transport;
+    if (!transport) return startY;
+    const transportRows: Array<[string, string]> = [
+      ['Salida:', [transport.departureDate, transport.departureTime].filter(Boolean).join(' ')],
+      ['Llegada:', transport.arrivalDate || ''],
+      ['Transportista:', transport.carrierRut ? this.formatRut(transport.carrierRut) : ''],
+      ['Origen:', [transport.originAddress, transport.originCommune].filter(Boolean).join(', ')],
+      ['Destino:', [transport.destinationAddress, transport.destinationCommune].filter(Boolean).join(', ')],
+      ['Chofer:', [transport.driverName, transport.driverRut && this.formatRut(transport.driverRut)].filter(Boolean).join(' · ')],
+      ['Patente:', transport.vehiclePlate || ''],
+      ['Acoplado:', transport.trailerPlate || ''],
+    ];
+    const values = transportRows.filter(([, value]) => !!value);
+    if (values.length === 0) return startY;
+
+    this.drawSectionTitle(doc, 'DATOS DE DESPACHO Y TRANSPORTE', startY, colors);
+    const boxY = startY + 16;
+    const rowsPerColumn = Math.ceil(values.length / 2);
+    const boxHeight = 12 + rowsPerColumn * 15;
+    doc.fillColor(colors.secondaryTint).strokeColor(colors.line).lineWidth(0.6).rect(PAGE_LEFT, boxY, PAGE_WIDTH, boxHeight).fillAndStroke();
+    this.drawRows(doc, values.slice(0, rowsPerColumn), PAGE_LEFT + 10, boxY + 7, 235, colors, 7.3);
+    this.drawRows(doc, values.slice(rowsPerColumn), 305, boxY + 7, 240, colors, 7.3);
+    return boxY + boxHeight + 16;
+  }
+
+  private drawReferences(
+    doc: PDFKit.PDFDocument,
+    model: DtePrintModel,
+    startY: number,
+    colors: PrintColors,
+    nextPage: () => number,
+  ): { currentY: number } {
+    let currentY = startY;
+    const drawHeader = () => {
+      this.drawSectionTitle(doc, 'DOCUMENTOS DE REFERENCIA', currentY, colors);
+      const tableY = currentY + 16;
+      doc.fillColor(colors.primary).rect(PAGE_LEFT, tableY, PAGE_WIDTH, 17).fill();
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7.1);
+      doc.text('Línea', 44, tableY + 5, { width: 32, align: 'center' });
+      doc.text('Tipo', 80, tableY + 5, { width: 70 });
+      doc.text('Folio', 155, tableY + 5, { width: 57 });
+      doc.text('Fecha', 218, tableY + 5, { width: 80 });
+      doc.text('Razón de referencia', 305, tableY + 5, { width: 245 });
+      currentY = tableY + 17;
+    };
+
+    if (currentY + 45 > BODY_BOTTOM) currentY = nextPage();
+    drawHeader();
+    for (const reference of model.references) {
+      const reason = reference.reason || '—';
+      doc.font('Helvetica').fontSize(7.2);
+      const height = Math.max(18, doc.heightOfString(reason, { width: 240 }) + 7);
+      if (currentY + height > BODY_BOTTOM) {
+        currentY = nextPage();
+        drawHeader();
+      }
+      doc.fillColor(colors.secondaryTint).rect(PAGE_LEFT, currentY, PAGE_WIDTH, height).fill();
+      doc.fillColor(colors.text).font('Helvetica').fontSize(7.2);
+      doc.text(reference.line, 44, currentY + 4, { width: 32, align: 'center' });
+      doc.text(reference.documentType ? this.getReferenceTitle(reference.documentType) : '—', 80, currentY + 4, { width: 70 });
+      doc.text(reference.folio || '—', 155, currentY + 4, { width: 57 });
+      doc.text(reference.date || '—', 218, currentY + 4, { width: 80 });
+      doc.text(reason, 305, currentY + 4, { width: 240, height: height - 7 });
+      doc.strokeColor(colors.line).lineWidth(0.4).moveTo(PAGE_LEFT, currentY + height).lineTo(PAGE_RIGHT, currentY + height).stroke();
+      currentY += height;
+    }
+    return { currentY: currentY + 15 };
+  }
+
+  private drawDetails(
+    doc: PDFKit.PDFDocument,
+    model: DtePrintModel,
+    startY: number,
+    colors: PrintColors,
+    nextPage: () => number,
+  ): { currentY: number } {
+    let currentY = startY;
+    const drawHeader = () => {
+      this.drawSectionTitle(doc, 'DETALLE DE LA TRANSACCIÓN', currentY, colors);
+      const tableY = currentY + 16;
+      doc.fillColor(colors.primary).rect(PAGE_LEFT, tableY, PAGE_WIDTH, 18).fill();
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7.1);
+      doc.text('Línea', 43, tableY + 5, { width: 28, align: 'center' });
+      doc.text('Descripción del ítem / servicio', 75, tableY + 5, { width: 225 });
+      doc.text('Cant.', 305, tableY + 5, { width: 46, align: 'center' });
+      doc.text('P. unitario', 356, tableY + 5, { width: 71, align: 'right' });
+      doc.text('Ajuste', 432, tableY + 5, { width: 55, align: 'right' });
+      doc.text('Total', 492, tableY + 5, { width: 59, align: 'right' });
+      currentY = tableY + 18;
+    };
+
+    if (currentY + 48 > BODY_BOTTOM) currentY = nextPage();
+    drawHeader();
+    model.items.forEach((item, index) => {
+      doc.font('Helvetica').fontSize(7.5);
+      const descriptionHeight = doc.heightOfString(item.name, { width: 225 });
+      const rowHeight = Math.max(19, descriptionHeight + 7);
+      if (currentY + rowHeight > BODY_BOTTOM) {
+        currentY = nextPage();
+        drawHeader();
+      }
+      doc.fillColor(index % 2 === 0 ? '#FFFFFF' : colors.secondaryTint).rect(PAGE_LEFT, currentY, PAGE_WIDTH, rowHeight).fill();
+      doc.fillColor(colors.text).font('Helvetica').fontSize(7.5);
+      doc.text(item.line, 43, currentY + 4, { width: 28, align: 'center' });
+      doc.text(item.name, 75, currentY + 4, { width: 225, height: rowHeight - 7 });
+      doc.text(item.quantity || '—', 305, currentY + 4, { width: 46, align: 'center' });
+      doc.text(this.formatCurrency(item.unitPrice, item.unitPriceText), 356, currentY + 4, { width: 71, align: 'right' });
+      doc.fontSize(6.5);
+      doc.text(this.formatAdjustments(item.adjustments), 432, currentY + 4, { width: 55, align: 'right', height: rowHeight - 7 });
+      doc.fontSize(7.5);
+      doc.text(this.formatCurrency(item.amount), 492, currentY + 4, { width: 59, align: 'right' });
+      doc.strokeColor(colors.line).lineWidth(0.4).moveTo(PAGE_LEFT, currentY + rowHeight).lineTo(PAGE_RIGHT, currentY + rowHeight).stroke();
+      currentY += rowHeight;
+    });
+    return { currentY: currentY + 16 };
+  }
+
+  private totalsHeight(model: DtePrintModel): number {
+    let rows = 1;
+    if (model.totals.netAmount !== undefined) rows += 1;
+    if (model.totals.exemptAmount !== undefined) rows += 1;
+    if (model.totals.ivaAmount !== undefined) rows += 1;
+    rows += model.totals.adjustments.length + model.totals.retentions.length;
+    return 18 + rows * 16 + 12;
+  }
+
+  private drawTotals(doc: PDFKit.PDFDocument, model: DtePrintModel, startY: number, colors: PrintColors): number {
+    const rows: Array<{ label: string; value: string; emphasis?: boolean }> = [];
+    if (model.totals.netAmount !== undefined) rows.push({ label: 'Monto neto', value: this.formatCurrency(model.totals.netAmount) });
+    if (model.totals.exemptAmount !== undefined) rows.push({ label: 'Monto exento', value: this.formatCurrency(model.totals.exemptAmount) });
+    if (model.totals.ivaAmount !== undefined) rows.push({
+      label: `I.V.A.${model.totals.ivaRate ? ` (${model.totals.ivaRate}%)` : ''}`,
+      value: this.formatCurrency(model.totals.ivaAmount),
+    });
+    for (const adjustment of model.totals.adjustments) {
+      rows.push({
+        label: adjustment.label || (adjustment.movement === 'D' ? 'Descuento global' : 'Recargo global'),
+        value: this.formatAdjustment(adjustment),
+      });
+    }
+    for (const retention of model.totals.retentions) {
+      rows.push({
+        label: `Retención${retention.type ? ` tipo ${retention.type}` : ''}${retention.rate ? ` (${retention.rate}%)` : ''}`,
+        value: `−${this.formatCurrency(retention.amount)}`,
+      });
+    }
+    rows.push({ label: 'MONTO TOTAL', value: this.formatCurrency(model.totals.totalAmount), emphasis: true });
+
+    const boxWidth = 230;
+    const boxX = PAGE_RIGHT - boxWidth;
+    const boxHeight = 12 + rows.length * 16;
+    doc.fillColor(colors.secondaryTint).strokeColor(colors.line).lineWidth(0.6).rect(boxX, startY, boxWidth, boxHeight).fillAndStroke();
+    let y = startY + 7;
+    for (const row of rows) {
+      doc.fillColor(row.emphasis ? colors.legal : colors.text).font(row.emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(row.emphasis ? 8.7 : 8);
+      doc.text(row.label, boxX + 10, y, { width: 130 });
+      doc.text(row.value, boxX + 145, y, { width: 75, align: 'right' });
+      y += 16;
+    }
+    return startY + boxHeight + 16;
+  }
+
+  private drawTed(doc: PDFKit.PDFDocument, barcode: Buffer, startY: number, colors: PrintColors): void {
+    const height = 108;
+    doc.image(barcode, PAGE_LEFT, startY + 4, { fit: [265, 99], valign: 'center' });
+    const infoX = 320;
+    doc.strokeColor(colors.legal).lineWidth(0.8).rect(infoX, startY, PAGE_RIGHT - infoX, height).stroke();
+    doc.fillColor(colors.legal).font('Helvetica-Bold').fontSize(8.8);
+    doc.text('Timbre Electrónico S.I.I.', infoX + 8, startY + 14, { width: 220, align: 'center' });
+    doc.fillColor(colors.text).font('Helvetica').fontSize(7.1);
+    doc.text('Código PDF417 generado desde el TED incluido en el XML firmado.', infoX + 13, startY + 34, { width: 210, align: 'center' });
+    doc.text('Verifique este documento en www.sii.cl', infoX + 13, startY + 72, { width: 210, align: 'center' });
+  }
+
+  private drawSectionTitle(doc: PDFKit.PDFDocument, title: string, y: number, colors: PrintColors): void {
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(9);
+    doc.text(title, PAGE_LEFT, y, { width: PAGE_WIDTH });
+    doc.strokeColor(colors.primary).lineWidth(0.9).moveTo(PAGE_LEFT, y + 12).lineTo(PAGE_RIGHT, y + 12).stroke();
+  }
+
+  private drawRows(
+    doc: PDFKit.PDFDocument,
+    rows: Array<[string, string]>,
+    x: number,
+    startY: number,
+    width: number,
+    colors: PrintColors,
+    size = 7.5,
+  ): void {
+    rows.forEach(([label, value], index) => {
+      const y = startY + index * 16;
+      doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(size);
+      doc.text(label, x, y, { width: 76 });
+      doc.fillColor(colors.text).font('Helvetica').fontSize(size);
+      doc.text(value, x + 78, y, { width: width - 78, height: 13 });
     });
   }
 
@@ -308,54 +390,83 @@ export class PdfGenerator {
       34: 'FACTURA EXENTA ELECTRÓNICA',
       39: 'BOLETA ELECTRÓNICA',
       41: 'BOLETA EXENTA ELECTRÓNICA',
+      46: 'FACTURA DE COMPRA ELECTRÓNICA',
       52: 'GUÍA DE DESPACHO ELECTRÓNICA',
       56: 'NOTA DE DÉBITO ELECTRÓNICA',
       61: 'NOTA DE CRÉDITO ELECTRÓNICA',
     };
-    return titles[type] || 'DOCUMENTO ELECTRÓNICO';
+    return titles[type] || `DOCUMENTO ELECTRÓNICO T${type}`;
+  }
+
+  private getReferenceTitle(type: string): string {
+    const asNumber = Number(type);
+    return Number.isFinite(asNumber) ? this.getDteTitle(asNumber) : type;
   }
 
   private generatePdf417(text: string): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
-      bwipjs.toBuffer({
-        bcid: 'pdf417',
-        text: text,
-        scale: 2,
-        height: 14,
-        includetext: false,
-      }, (err, pngBuffer) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(pngBuffer);
-        }
+      bwipjs.toBuffer({ bcid: 'pdf417', text, scale: 2, height: 14, includetext: false }, (error, pngBuffer) => {
+        if (error) reject(error);
+        else resolve(pngBuffer);
       });
     });
   }
 
-  private formatRut(rut: string): string {
-    if (!rut) return '';
-    const clean = rut.replace(/[^0-9kK]/g, '');
-    if (clean.length < 2) return clean;
-    
-    const body = clean.slice(0, -1);
-    const dv = clean.slice(-1).toUpperCase();
-    
-    let formattedBody = '';
-    let count = 0;
-    for (let i = body.length - 1; i >= 0; i--) {
-      formattedBody = body.charAt(i) + formattedBody;
-      count++;
-      if (count === 3 && i !== 0) {
-        formattedBody = '.' + formattedBody;
-        count = 0;
-      }
-    }
-    
-    return `${formattedBody}-${dv}`;
+  private resolveColors(profile: PdfBrandProfile | null | undefined): PrintColors {
+    const primary = this.isHexColor(profile?.primaryColor) ? profile!.primaryColor!.toUpperCase() : DEFAULT_INVOICE_PRIMARY_COLOR;
+    const secondary = this.isHexColor(profile?.secondaryColor) ? profile!.secondaryColor!.toUpperCase() : DEFAULT_INVOICE_SECONDARY_COLOR;
+    return {
+      primary,
+      secondaryTint: this.tint(secondary, 0.92),
+      text: '#1F2937',
+      muted: '#4B5563',
+      line: '#CBD5E1',
+      legal: '#C62828',
+    };
   }
 
-  private formatCurrency(value: number): string {
-    return `$${Math.round(value).toLocaleString('es-CL')}`;
+  private isHexColor(value: string | undefined): value is string {
+    return !!value && /^#[0-9A-F]{6}$/i.test(value);
+  }
+
+  private tint(hex: string, whiteRatio: number): string {
+    const components = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
+    const blended = components.map((value) => Math.round(value + (255 - value) * whiteRatio));
+    return `#${blended.map((value) => value.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+  }
+
+  private formatRut(rut: string): string {
+    const clean = (rut || '').replace(/[^0-9kK]/g, '');
+    if (clean.length < 2) return rut || '—';
+    const body = clean.slice(0, -1);
+    const dv = clean.slice(-1).toUpperCase();
+    const grouped = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${grouped}-${dv}`;
+  }
+
+  private formatCurrency(value: number | undefined, rawValue?: string): string {
+    if (value === undefined || !Number.isFinite(value)) return '—';
+    if (rawValue && /^\d+(?:\.\d+)?$/.test(rawValue)) {
+      const [integerPart, fractionalPart] = rawValue.split('.');
+      const normalizedInteger = integerPart.replace(/^0+(?=\d)/, '');
+      const groupedInteger = normalizedInteger.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      return `$${groupedInteger}${fractionalPart === undefined ? '' : `,${fractionalPart}`}`;
+    }
+    return `$${value.toLocaleString('es-CL', { maximumFractionDigits: 6 })}`;
+  }
+
+  private formatAdjustment(adjustment: DtePrintAdjustment): string {
+    const prefix = adjustment.movement === 'D' ? '−' : '+';
+    if (adjustment.valueType === '%') {
+      if (/^\d+(?:\.\d+)?$/.test(adjustment.rawValue)) {
+        return `${prefix}${adjustment.rawValue.replace('.', ',')}%`;
+      }
+      return `${prefix}${adjustment.value.toLocaleString('es-CL', { maximumFractionDigits: 2 })}%`;
+    }
+    return `${prefix}${this.formatCurrency(adjustment.value, adjustment.rawValue)}`;
+  }
+
+  private formatAdjustments(adjustments: DtePrintAdjustment[]): string {
+    return adjustments.map((adjustment) => this.formatAdjustment(adjustment)).join(' · ');
   }
 }

@@ -167,6 +167,63 @@ describe('IntegrationProcessorService — folio único, reintentos y polling', (
     );
   });
 
+  it('reconcilia una solicitud observed sin retransmitir el DTE', async () => {
+    const dte = await dteRepo
+      .create({ tenantId, type: 39, folio: 103, status: 'REPARO', trackId: 'TRACK-OBSERVED' } as any)
+      .toPromise();
+    const request = await seedRequest({ state: 'observed', dteId: dte!.id, submittedAt: new Date() });
+    queryDteStatusUseCase.execute.mockImplementation(() => {
+      dteRepo.update(dte!.id!, { status: 'ACEPTADO' } as any).toPromise();
+      return of({ status: 'ACEPTADO' });
+    });
+
+    const result = await processor.pollSubmitted();
+
+    expect(result).toEqual({ polled: 1, finalized: 1 });
+    expect((await repo.get(request.id!).toPromise())!.state).toBe('accepted');
+    expect(emitDteUseCase.transmit).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchForRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ id: request.id }),
+      'accepted',
+      expect.stringContaining('TRACK-OBSERVED'),
+    );
+  });
+
+  it('continúa consultando un RCOF observed hasta su estado final', async () => {
+    const rcof = await dataServices.rcofSubmission.create({
+      id: 'rcof-observed-1', tenantId, periodDate: '2026-08-14', sequence: 1,
+      status: 'observed', trackId: 'TRACK-RCOF-OBSERVED',
+    }).toPromise();
+    const request = await seedRequest({
+      kind: 'rcof', state: 'observed', rcofId: rcof.id,
+      payload: { date: '2026-08-14', sequenceNumber: 1 },
+    });
+    generateRcofUseCase.pollStatus.mockResolvedValue({ ...rcof, status: 'accepted' });
+
+    const result = await processor.pollRcofSubmitted();
+
+    expect(result).toEqual({ polled: 1, finalized: 1 });
+    expect(generateRcofUseCase.pollStatus).toHaveBeenCalledWith(tenantId, expect.objectContaining({ id: rcof.id }));
+    expect((await repo.get(request.id!).toPromise())!.state).toBe('accepted');
+  });
+
+  it.each(['accepted', 'rejected'])('recupera un RCOF %s persistido antes de una caída sin reenviar', async (status) => {
+    const rcof = await dataServices.rcofSubmission.create({
+      tenantId, periodDate: '2026-08-14', sequence: 1,
+      status, trackId: 'TRACK-RCOF-PERSISTED',
+    }).toPromise();
+    const request = await seedRequest({
+      kind: 'rcof', state: 'submitted', rcofId: rcof.id,
+      payload: { date: '2026-08-14', sequenceNumber: 1 },
+    });
+
+    expect(await processor.pollRcofSubmitted()).toEqual({ polled: 1, finalized: 1 });
+    expect((await repo.get(request.id!).toPromise())!.state).toBe(status);
+    expect(generateRcofUseCase.pollStatus).not.toHaveBeenCalled();
+    expect(generateRcofUseCase.execute).not.toHaveBeenCalled();
+    expect(generateRcofUseCase.transmit).not.toHaveBeenCalled();
+  });
+
   it('kind=rcof delega en GenerateRcofUseCase y vincula rcofId', async () => {
     await seedRequest({
       kind: 'rcof',
@@ -187,5 +244,23 @@ describe('IntegrationProcessorService — folio único, reintentos y polling', (
     const updated = (await repo.getAll().toPromise())!.find((r: any) => r.kind === 'rcof')!;
     expect(updated.rcofId).toBe('rcof-1');
     expect(updated.state).toBe('submitted');
+  });
+
+  it('recupera el estado final de un RCOF ya aceptado después de un retry de worker', async () => {
+    await seedRequest({
+      kind: 'rcof',
+      payload: { date: '2026-08-14', sequenceNumber: 1 },
+    });
+    generateRcofUseCase.execute.mockResolvedValue({
+      id: 'rcof-accepted', trackId: 'TRACK-RCOF-ACCEPTED', status: 'accepted',
+    });
+
+    await processor.processDue(5);
+
+    const updated = (await repo.getAll().toPromise())!.find((request: any) => request.kind === 'rcof')!;
+    expect(updated.rcofId).toBe('rcof-accepted');
+    expect(updated.state).toBe('accepted');
+    expect(dispatcher.dispatchForRequest).toHaveBeenCalledWith(expect.objectContaining({ id: updated.id }), 'submitted', expect.any(String));
+    expect(dispatcher.dispatchForRequest).toHaveBeenCalledWith(expect.objectContaining({ id: updated.id }), 'accepted', expect.any(String));
   });
 });

@@ -13,9 +13,10 @@ export type IntegrationRequestKind = 'dte' | 'credit-note' | 'debit-note' | 'rco
 
 export interface EnqueueInput {
   tenantId: string;
-  credentialId: string;
+  credentialId?: string | null;
   kind: IntegrationRequestKind;
   idempotencyKey: string;
+  resourceKey?: string;
   rawBody: string;
   payload: any;
   externalReference?: string;
@@ -25,7 +26,7 @@ export interface EnqueueInput {
 /**
  * Creación idempotente de solicitudes B2B y composición de su estado público.
  *
- * Reglas de idempotencia (emisión y anulación):
+ * Reglas de idempotencia (emisión DTE/notas y RCOF):
  * - Sin `Idempotency-Key` → 400.
  * - Key repetida con mismo hash de body → se devuelve la respuesta original.
  * - Key repetida con body distinto → 409 IDEMPOTENCY_CONFLICT.
@@ -52,7 +53,7 @@ export class IntegrationRequestService {
 
     const existing = await firstValueFrom(
       this.dataServices.integrationRequest.findOne({
-        where: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey },
+        where: { tenantId: input.tenantId, kind: input.kind, resourceKey: input.resourceKey ?? '', idempotencyKey: input.idempotencyKey },
       }),
     );
     if (existing) {
@@ -81,25 +82,66 @@ export class IntegrationRequestService {
       }
     }
 
-    const request = await firstValueFrom(
-      this.dataServices.integrationRequest.create({
+    let request: IntegrationRequestEntity;
+    try {
+      request = (await firstValueFrom(
+        this.dataServices.integrationRequest.create({
         tenantId: input.tenantId,
         kind: input.kind,
         idempotencyKey: input.idempotencyKey,
+        resourceKey: input.resourceKey ?? '',
         requestHash,
         externalReference: input.externalReference ?? null,
         payload: input.payload,
         metadata: input.metadata ?? null,
         state: 'queued',
-        originCredentialId: input.credentialId,
+        originCredentialId: input.credentialId ?? null,
         attempts: 0,
         maxAttempts: 5,
         nextAttemptAt: new Date(),
         stateHistory: [
           { state: 'queued', timestamp: new Date().toISOString(), detail: 'Solicitud recibida (202).' },
         ],
-      } as any),
-    );
+        } as any),
+      ))!;
+    } catch (error) {
+      if (!this.isUniqueViolation(error)) throw error;
+
+      // Concurrent identical calls can both pass the initial read. Resolve
+      // the winner from the unique index so retries keep the same 202 result.
+      const racedRequest = await firstValueFrom(
+        this.dataServices.integrationRequest.findOne({
+          where: {
+            tenantId: input.tenantId,
+            kind: input.kind,
+            resourceKey: input.resourceKey ?? '',
+            idempotencyKey: input.idempotencyKey,
+          },
+        }),
+      );
+      if (racedRequest) {
+        if (racedRequest.requestHash !== requestHash) {
+          throw this.idempotencyConflict();
+        }
+        return { request: racedRequest, replayed: true };
+      }
+
+      if (input.externalReference) {
+        const racedReference = await firstValueFrom(
+          this.dataServices.integrationRequest.findOne({
+            where: { tenantId: input.tenantId, externalReference: input.externalReference },
+          }),
+        );
+        if (racedReference) {
+          throw new IntegrationApiException(
+            IntegrationErrorCode.EXTERNAL_REFERENCE_CONFLICT,
+            `externalReference "${input.externalReference}" ya está usada por otra solicitud.`,
+            409,
+          );
+        }
+      }
+      throw error;
+    }
     this.logger.log(
       `Solicitud ${request.id} (${input.kind}) encolada para tenant ${input.tenantId}`,
     );
@@ -174,7 +216,7 @@ export class IntegrationRequestService {
       submittedAt: request.submittedAt ?? null,
       finalizedAt: request.finalizedAt ?? null,
       _links: {
-        self: `/api/v1/dtes/${request.id}`,
+        self: `/api/v1/${request.kind === 'rcof' ? 'rcof' : 'dtes'}/${request.id}`,
         ...(dte
           ? {
               xml: `/api/v1/dtes/${dte.id}/xml`,
@@ -197,6 +239,19 @@ export class IntegrationRequestService {
       status: rcof.status,
       trackId: rcof.trackId ?? null,
     };
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    const candidate = error as any;
+    return candidate?.driverError?.code === '23505' || candidate?.code === '23505';
+  }
+
+  private idempotencyConflict(): IntegrationApiException {
+    return new IntegrationApiException(
+      IntegrationErrorCode.IDEMPOTENCY_CONFLICT,
+      'El Idempotency-Key ya fue usado con un payload distinto.',
+      409,
+    );
   }
 
   /**
@@ -257,6 +312,13 @@ export class IntegrationRequestService {
           422,
         );
       }
+      if (item.discountPercentage != null && item.discountAmount != null) {
+        throw new IntegrationApiException(
+          IntegrationErrorCode.VALIDATION_ERROR,
+          'Cada item puede usar discountPercentage o discountAmount, pero no ambos.',
+          422,
+        );
+      }
     }
 
     const receiver = payload.receiver;
@@ -305,7 +367,11 @@ export class IntegrationRequestService {
       discountPercentage: i.discountPercentage,
       discountAmount: i.discountAmount,
     }));
-    const totals = this.dteXmlEngine.calculateTotals(type as any, engineItems as any);
+    const totals = this.dteXmlEngine.calculateTotals(type as any, engineItems as any, {
+      pricingMode: payload.pricingMode,
+      globalDiscountPercentage: payload.globalDiscountPercentage,
+      taxRetentions: payload.taxRetentions,
+    });
 
     // Si el integrador declaró totales, deben coincidir con los del servidor.
     if (payload.totals) {

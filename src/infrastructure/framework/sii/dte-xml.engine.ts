@@ -34,6 +34,13 @@ export class DteXmlEngine {
 
   buildDte(input: DteBuildInput): BuiltDteXml {
     this.assertSupportedType(input.type);
+    // El receptor de boleta es opcional en la API, pero TED y XML requieren
+    // valores concretos antes de calcular o firmar el documento.
+    const receiver = {
+      ...input.receiver,
+      rut: input.receiver?.rut || (isBoleta(input.type) ? BOLETA_GENERIC_RECEIVER : ''),
+      businessName: input.receiver?.businessName || (isBoleta(input.type) ? 'CONSUMIDOR FINAL' : ''),
+    };
     const issueDate = input.issueDate || nowSantiagoDate();
     const totals = this.discountEngine.calculateTotals(input.type, input.items, {
       globalDiscountPercentage: input.globalDiscountPercentage,
@@ -72,7 +79,7 @@ export class DteXmlEngine {
       ...(retentionAmount > 0 ? { retentionAmount } : {}),
     };
 
-    const tedXml = this.buildTed(input, totalsWithRetention, issueDate, cafXml, cafPrivateKey);
+    const tedXml = this.buildTed({ ...input, receiver }, totalsWithRetention, issueDate, cafXml, cafPrivateKey);
     const detailsXml = input.items.map((item, index) => this.buildDetail(item, index + 1)).join('');
 
     // Referencia al SET del SII (boletas de certificación): <TpoDocRef>SET</TpoDocRef>
@@ -122,19 +129,22 @@ export class DteXmlEngine {
     } else if (input.type === 52) {
       // Fallback: T52 sin transporte explícito usa datos del receptor como destino.
       transportXml = `<Transporte>` +
-        `<DirDest>${this.escapeXml(input.receiver.address || 'Direccion no informada')}</DirDest>` +
-        `<CmnaDest>${this.escapeXml(input.receiver.commune || 'Santiago')}</CmnaDest>` +
+        `<DirDest>${this.escapeXml(receiver.address || 'Direccion no informada')}</DirDest>` +
+        `<CmnaDest>${this.escapeXml(receiver.commune || 'Santiago')}</CmnaDest>` +
         `</Transporte>`;
     }
 
-    // Bloque <Totales>: renderiza nodos de descuento global e ImptoReten cuando aplica
-    const globalDiscountXml = totals.globalDiscountAmount && totals.globalDiscountAmount > 0
-      ? `<DscRcgloGlobal>` +
-        `<NroLinea>1</NroLinea>` +
+    // A nivel de Documento, el descuento global conserva la unidad porcentual
+    // declarada por el emisor, usando la estructura vigente del XSD del SII.
+    const globalDiscountXml = totals.globalDiscountAmount && totals.globalDiscountAmount > 0 &&
+      input.globalDiscountPercentage != null && input.globalDiscountPercentage > 0
+      ? `<DscRcgGlobal>` +
+        `<NroLinDR>1</NroLinDR>` +
         `<TpoMov>D</TpoMov>` +
-        `<Glosa>Descuento global afectos</Glosa>` +
-        `<ValorCF>${totals.globalDiscountAmount}</ValorCF>` +
-        `</DscRcgloGlobal>`
+        `<GlosaDR>Descuento global afectos</GlosaDR>` +
+        `<TpoValor>%</TpoValor>` +
+        `<ValorDR>${input.globalDiscountPercentage}</ValorDR>` +
+        `</DscRcgGlobal>`
       : '';
 
     // ImptoReten: retenciones tributarias (ej. T46 con IVA retenido total, TipoImp=15).
@@ -155,9 +165,9 @@ export class DteXmlEngine {
     const indTrasladoXml = input.type === 52 ? `<IndTraslado>${input.indTraslado || input.transport?.transferType || 1}</IndTraslado>` : '';
 
     // Receptor de boleta: si no se especifica RUT, usar consumidor final genérico.
-    const receiverRut = isBoletaType && !input.receiver.rut
+    const receiverRut = isBoletaType && !receiver.rut
       ? BOLETA_GENERIC_RECEIVER
-      : input.receiver.rut;
+      : receiver.rut;
 
     const xml = Iso88591Encoder.normalizeXmlDeclaration(
       `<DTE version="1.0">` +
@@ -175,25 +185,26 @@ export class DteXmlEngine {
       `</Emisor>` +
       `<Receptor>` +
       `<RUTRecep>${receiverRut}</RUTRecep>` +
-      `<RznSocRecep>${this.escapeXml(input.receiver.businessName)}</RznSocRecep>` +
-      `${input.receiver.giro ? `<GiroRecep>${this.escapeXml(input.receiver.giro)}</GiroRecep>` : ''}` +
-      `${input.receiver.address ? `<DirRecep>${this.escapeXml(input.receiver.address)}</DirRecep>` : ''}` +
-      `${input.receiver.commune ? `<CmnaRecep>${this.escapeXml(input.receiver.commune)}</CmnaRecep>` : ''}` +
-      `${input.receiver.city ? `<CiudadRecep>${this.escapeXml(input.receiver.city)}</CiudadRecep>` : ''}` +
+      `<RznSocRecep>${this.escapeXml(receiver.businessName || 'Receptor no informado')}</RznSocRecep>` +
+      `${receiver.giro ? `<GiroRecep>${this.escapeXml(receiver.giro)}</GiroRecep>` : ''}` +
+      `${receiver.address ? `<DirRecep>${this.escapeXml(receiver.address)}</DirRecep>` : ''}` +
+      `${receiver.commune ? `<CmnaRecep>${this.escapeXml(receiver.commune)}</CmnaRecep>` : ''}` +
+      `${receiver.city ? `<CiudadRecep>${this.escapeXml(receiver.city)}</CiudadRecep>` : ''}` +
       `</Receptor>` +
       transportXml +
       `<Totales>` +
       `${totals.netAmount > 0 ? `<MntNeto>${totals.netAmount}</MntNeto><TasaIVA>19</TasaIVA><IVA>${totals.ivaAmount}</IVA>` : ''}` +
       `${totals.exemptAmount > 0 ? `<MntExe>${totals.exemptAmount}</MntExe>` : ''}` +
       imptoRetenXml +
-      globalDiscountXml +
       `<MntTotal>${computedTotal}</MntTotal>` +
       `</Totales>` +
       `</Encabezado>` +
       detailsXml +
+      globalDiscountXml +
       setRefXml +
       referencesXml +
       tedXml +
+      `<TmstFirma>${nowSantiagoTimestamp()}</TmstFirma>` +
       `</Documento>` +
       `</DTE>`,
     );
@@ -203,18 +214,28 @@ export class DteXmlEngine {
   }
 
   /** Cálculo tributario centralizado utilizado por el endpoint de previsualización. */
-  calculateTotals(type: SupportedDteType, items: DteLineItem[]): DteTotals {
+  calculateTotals(type: SupportedDteType, items: DteLineItem[], options: Pick<DteBuildInput, 'pricingMode' | 'globalDiscountPercentage' | 'taxRetentions'> = {}): DteTotals {
     this.assertSupportedType(type);
-    return this.discountEngine.calculateTotals(type, items);
+    const totals = this.discountEngine.calculateTotals(type, items, options);
+    const retentionAmount = (options.taxRetentions || []).reduce((sum, retention) => sum + retention.amount, 0);
+    return retentionAmount > 0
+      ? { ...totals, retentionAmount, totalAmount: totals.netAmount + totals.exemptAmount + totals.ivaAmount - retentionAmount }
+      : totals;
   }
 
   buildEnvioDte(input: EnvioDteInput): string {
     const resolutionDate = input.resolutionDate || nowSantiagoDate();
     const resolutionNumber = input.resolutionNumber || 0;
     const dtes = input.signedDtes.map((xml) => this.stripXmlDeclaration(xml)).join('');
+    const subtotals = new Map<number, number>();
+    for (const xml of input.signedDtes) {
+      const type = Number(/<TipoDTE>(\d+)<\/TipoDTE>/.exec(xml)?.[1]);
+      if (type) subtotals.set(type, (subtotals.get(type) || 0) + 1);
+    }
+    const subtotalsXml = [...subtotals.entries()].map(([type, count]) => `<SubTotDTE><TpoDTE>${type}</TpoDTE><NroDTE>${count}</NroDTE></SubTotDTE>`).join('');
 
     return Iso88591Encoder.normalizeXmlDeclaration(
-      `<EnvioDTE xmlns="http://www.sii.cl/SiiDte" version="1.0" ID="EnvioDTE">` +
+      `<EnvioDTE xmlns="http://www.sii.cl/SiiDte" version="1.0">` +
       `<SetDTE ID="SetDoc">` +
       `<Caratula version="1.0">` +
       `<RutEmisor>${input.issuerRut}</RutEmisor>` +
@@ -223,6 +244,7 @@ export class DteXmlEngine {
       `<FchResol>${resolutionDate}</FchResol>` +
       `<NroResol>${resolutionNumber}</NroResol>` +
       `<TmstFirmaEnv>${nowSantiagoTimestamp()}</TmstFirmaEnv>` +
+      subtotalsXml +
       `</Caratula>` +
       dtes +
       `</SetDTE>` +
@@ -235,15 +257,15 @@ export class DteXmlEngine {
     const resolutionNumber = input.resolutionNumber || 0;
     const dtes = input.signedDtes.map((xml) => this.stripXmlDeclaration(xml)).join('');
 
-    // RutProvSW / RznSocProvSW: identificación del proveedor de software SaaS.
-    // Relevante para trazabilidad tributaria del SII en boletas electrónicas.
-    const softwareProviderXml = input.softwareProvider?.rut
-      ? `<RutProvSW>${input.softwareProvider.rut}</RutProvSW>` +
-        `<RznSocProvSW>${this.escapeXml(input.softwareProvider.businessName)}</RznSocProvSW>`
-      : '';
+    const subtotals = new Map<number, number>();
+    for (const xml of input.signedDtes) {
+      const type = Number(/<TipoDTE>(\d+)<\/TipoDTE>/.exec(xml)?.[1]);
+      if (type) subtotals.set(type, (subtotals.get(type) || 0) + 1);
+    }
+    const subtotalsXml = [...subtotals.entries()].map(([type, count]) => `<SubTotDTE><TpoDTE>${type}</TpoDTE><NroDTE>${count}</NroDTE></SubTotDTE>`).join('');
 
     return Iso88591Encoder.normalizeXmlDeclaration(
-      `<EnvioBOLETA xmlns="http://www.sii.cl/SiiDte" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sii.cl/SiiDte EnvioBOLETA_v11.xsd" version="1.0" ID="EnvioBOLETA">` +
+      `<EnvioBOLETA xmlns="http://www.sii.cl/SiiDte" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sii.cl/SiiDte EnvioBOLETA_v11.xsd" version="1.0">` +
       `<SetDTE ID="SetDoc">` +
       `<Caratula version="1.0">` +
       `<RutEmisor>${input.issuerRut}</RutEmisor>` +
@@ -251,8 +273,8 @@ export class DteXmlEngine {
       `<RutReceptor>${BOLETA_ENVELOPE_RECEIVER}</RutReceptor>` +
       `<FchResol>${resolutionDate}</FchResol>` +
       `<NroResol>${resolutionNumber}</NroResol>` +
-      softwareProviderXml +
       `<TmstFirmaEnv>${nowSantiagoTimestamp()}</TmstFirmaEnv>` +
+      subtotalsXml +
       `</Caratula>` +
       dtes +
       `</SetDTE>` +
@@ -332,23 +354,12 @@ export class DteXmlEngine {
   private buildDetail(item: DteLineItem, lineNumber: number): string {
     // El cálculo de montos lo hace el DiscountEngine; aquí solo se renderiza.
     const lineResult = this.discountEngine.applyItemDiscount(item);
-    let dscItemXml = '';
+    let adjustmentXml = '';
     if (lineResult.discountAmount > 0) {
       if (lineResult.isPercentage) {
-        dscItemXml =
-          `<DscItem>` +
-          `<TipoMov>D</TipoMov>` +
-          `<Glosa>Descuento linea ${lineNumber}</Glosa>` +
-          `<ValorCF>${lineResult.discountAmount}</ValorCF>` +
-          `<DescuentoPct>${lineResult.percentage}</DescuentoPct>` +
-          `</DscItem>`;
+        adjustmentXml = `<DescuentoPct>${lineResult.percentage}</DescuentoPct>`;
       } else {
-        dscItemXml =
-          `<DscItem>` +
-          `<TipoMov>D</TipoMov>` +
-          `<Glosa>Descuento linea ${lineNumber}</Glosa>` +
-          `<ValorCF>${lineResult.discountAmount}</ValorCF>` +
-          `</DscItem>`;
+        adjustmentXml = `<DescuentoMonto>${lineResult.discountAmount}</DescuentoMonto>`;
       }
     }
 
@@ -359,7 +370,7 @@ export class DteXmlEngine {
       `<NmbItem>${this.escapeXml(item.name)}</NmbItem>` +
       `<QtyItem>${item.quantity}</QtyItem>` +
       `<PrcItem>${item.price}</PrcItem>` +
-      dscItemXml +
+      adjustmentXml +
       `<MontoItem>${lineResult.netAmount}</MontoItem>` +
       `</Detalle>`
     );

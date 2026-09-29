@@ -14,6 +14,7 @@ import { CertificateUtils } from '../../infrastructure/framework/sii/certificate
 import { SiiAuthTokenService } from '../../infrastructure/framework/sii/sii-auth-token.service';
 import { DteXmlEngine } from '../../infrastructure/framework/sii/dte-xml.engine';
 import { TenantConfigService } from '../../infrastructure/framework/sii/tenant-config.service';
+import { InvoiceBrandingService } from '../../infrastructure/framework/sii/invoice-branding.service';
 import { requiresSpecialAuth } from '../../infrastructure/framework/sii/dte-domain-rules';
 
 @Injectable()
@@ -28,6 +29,7 @@ export class EmitDteUseCase {
     private readonly siiAuthTokenService: SiiAuthTokenService,
     private readonly dteXmlEngine: DteXmlEngine,
     private readonly tenantConfigService: TenantConfigService,
+    private readonly invoiceBrandingService: InvoiceBrandingService,
   ) {}
 
   public execute(
@@ -35,11 +37,12 @@ export class EmitDteUseCase {
     tenantId: string,
     userId?: string,
     ipAddress?: string,
-    userAgent?: string
+    userAgent?: string,
+    actorCredentialId?: string,
   ): Observable<any> {
     return this.prepare(dto, tenantId, userId).pipe(
       switchMap((savedDte) => {
-        return this.transmit(savedDte.id!, tenantId, userId, ipAddress, userAgent, dto.simulatedUser);
+        return this.transmit(savedDte.id!, tenantId, userId, ipAddress, userAgent, dto.simulatedUser, actorCredentialId);
       })
     );
   }
@@ -184,7 +187,7 @@ export class EmitDteUseCase {
                 dteDoc.signatureValue = signatureValue;
                 dteDoc.status = 'FIRMADO';
 
-                const operator = simulatedUser?.name || 'Andrea Muñoz Silva';
+                const operator = simulatedUser?.name || 'Sistema de emisión';
                 dteDoc.statusHistory = [
                   {
                     status: 'BORRADOR',
@@ -200,7 +203,19 @@ export class EmitDteUseCase {
                   }
                 ];
 
-                return from(this.dataServices.dteDocument.create(dteDoc));
+                // El perfil visual es una fotografía de la configuración activa
+                // al persistir el DTE. El XML y su firma no dependen de esta
+                // referencia: sólo permite reconstruir posteriormente el PDF
+                // con la misma identidad visual que tuvo el documento emitido.
+                return from(this.invoiceBrandingService.ensureActiveBrandProfileIdForEmission(tenantId)).pipe(
+                  switchMap((activeBrandProfileId) => {
+                    const dteWithBrandSnapshot = dteDoc as DteDocumentEntity & {
+                      brandProfileId: string | null;
+                    };
+                    dteWithBrandSnapshot.brandProfileId = activeBrandProfileId;
+                    return from(this.dataServices.dteDocument.create(dteWithBrandSnapshot));
+                  }),
+                );
               }))
             ));
           })
@@ -215,7 +230,8 @@ export class EmitDteUseCase {
     userId?: string,
     ipAddress?: string,
     userAgent?: string,
-    simulatedUser?: any
+    simulatedUser?: any,
+    actorCredentialId?: string,
   ): Observable<any> {
     this.logger.log(`Transmitiendo DTE ID ${dteId} al SII...`);
 
@@ -280,7 +296,7 @@ export class EmitDteUseCase {
                       resolutionNumber: taxProfile?.resolutionNumber,
                     });
 
-                const envelopeId = isBoleta ? 'EnvioBOLETA' : 'EnvioDTE';
+                const envelopeId = 'SetDoc';
                 const { signedXml: signedEnvelopeXml } = this.signatureEngine.signXml(
                   envelopeXml,
                   certificatePfxBase64,
@@ -307,7 +323,7 @@ export class EmitDteUseCase {
                         submission.status = 'PENDIENTE';
                         submission.responseXml = signedEnvelopeXml;
 
-                        const operator = simulatedUser?.name || 'Andrea Muñoz Silva';
+                        const operator = simulatedUser?.name || 'Sistema de emisión';
                         savedDte.status = 'ENVIADO';
                         savedDte.trackId = trackId;
                         savedDte.statusHistory = [
@@ -334,8 +350,8 @@ export class EmitDteUseCase {
                           trackId, 
                           repRut: representativeRut,
                           operatorName: operator,
-                          operatorRut: simulatedUser?.rut || '17.842.102-5',
-                          operatorId: simulatedUser?.id || userId
+                          actorType: actorCredentialId ? 'integration_credential' : userId ? 'user' : 'system',
+                          ...(actorCredentialId ? { actorCredentialId } : {}),
                         };
 
                         return forkJoin({
@@ -356,7 +372,7 @@ export class EmitDteUseCase {
                       }),
                       catchError((transmissionError) => {
                         this.logger.error(`Error en la transmisión de recepción SOAP: ${transmissionError.message}`);
-                        const operator = simulatedUser?.name || 'Andrea Muñoz Silva';
+                        const operator = simulatedUser?.name || 'Sistema de emisión';
                         savedDte.status = 'BORRADOR';
                         savedDte.statusHistory = [
                           ...(savedDte.statusHistory || []),

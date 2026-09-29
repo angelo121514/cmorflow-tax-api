@@ -4,6 +4,8 @@ import { WorkerRlsPolicy1805100000000 } from '../src/database/migrations/1805100
 import { EngineTableRls1805200000000 } from '../src/database/migrations/1805200000000-EngineTableRls';
 import { AddCredentialSecretEncrypted1805300000000 } from '../src/database/migrations/1805300000000-AddCredentialSecretEncrypted';
 import { AddCronNonces1805400000000 } from '../src/database/migrations/1805400000000-AddCronNonces';
+import { IntegrationRequestResourceKey1805600000000 } from '../src/database/migrations/1805600000000-IntegrationRequestResourceKey';
+import { AllowSystemIntegrationRequests1805800000000 } from '../src/database/migrations/1805800000000-AllowSystemIntegrationRequests';
 import { IntegrationQueueClaimer } from '../src/application/integrations/integration-queue.claimer';
 import { IntegrationWebhookService } from '../src/application/integrations/integration-webhook.service';
 
@@ -30,6 +32,8 @@ describePostgres('PostgreSQL migrations, RLS, idempotency and queue claims', () 
         EngineTableRls1805200000000,
         AddCredentialSecretEncrypted1805300000000,
         AddCronNonces1805400000000,
+        IntegrationRequestResourceKey1805600000000,
+        AllowSystemIntegrationRequests1805800000000,
       ],
       migrationsTableName: 'typeorm_migrations',
     });
@@ -114,6 +118,8 @@ describePostgres('PostgreSQL migrations, RLS, idempotency and queue claims', () 
       'EngineTableRls1805200000000',
       'AddCredentialSecretEncrypted1805300000000',
       'AddCronNonces1805400000000',
+      'IntegrationRequestResourceKey1805600000000',
+      'AllowSystemIntegrationRequests1805800000000',
     ]);
     // Las 4 tablas del motor (dte_documents, etc.) no existen en esta BD de
     // prueba: su política se omite y quedan las 5 de las tablas B2B.
@@ -158,6 +164,21 @@ describePostgres('PostgreSQL migrations, RLS, idempotency and queue claims', () 
     await expect(insertRequest(tenantA, credentialA, 'shared-key')).rejects.toMatchObject({ code: '23505' });
     const rows = await admin.query(`SELECT tenant_id FROM integration_requests WHERE idempotency_key = 'shared-key'`);
     expect(rows).toHaveLength(2);
+  });
+
+  it('allows internal durable requests without an API credential while preserving tenant isolation', async () => {
+    await admin.query(
+      `INSERT INTO integration_requests
+       (tenant_id, kind, idempotency_key, request_hash, payload, origin_credential_id)
+       VALUES ($1, 'rcof', 'rcof-daily:2026-09-26:1', 'daily-hash', '{"date":"2026-09-26"}'::jsonb, NULL)`,
+      [tenantA],
+    );
+    const visible = await app.transaction(async (manager) => {
+      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantA]);
+      return manager.query(`SELECT kind, origin_credential_id FROM integration_requests WHERE kind = 'rcof'`);
+    });
+    expect(visible).toHaveLength(1);
+    expect(visible[0].origin_credential_id).toBeNull();
   });
 
   it('allows the trusted worker to claim each row at most once concurrently', async () => {

@@ -112,6 +112,86 @@ describe('IntegrationWebhookService — eventos y entregas firmadas', () => {
     expect(deliveries[0].responseStatus).toBe(200);
   });
 
+  it('lee como máximo 300 bytes de una respuesta webhook', async () => {
+    const cancel = jest.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('a'.repeat(200)));
+        controller.enqueue(new TextEncoder().encode('b'.repeat(200)));
+      },
+      cancel,
+    });
+    const response = new Response(stream, { status: 200 });
+
+    const snippet = await (service as any).readResponseSnippet(response);
+
+    expect(snippet).toHaveLength(300);
+    expect(snippet).toBe('a'.repeat(200) + 'b'.repeat(100));
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it('mantiene el timeout durante la lectura del body y reintenta si se vence', async () => {
+    await registerEndpoint();
+    await service.dispatchForRequest({ tenantId, kind: 'dte', id: 'req-slow-body' } as any, 'submitted', 'x');
+
+    let signal: AbortSignal | undefined;
+    let resolveHeaders: (() => void) | undefined;
+    const headersReceived = new Promise<void>((resolve) => {
+      resolveHeaders = resolve;
+    });
+    fetchMock.mockImplementation(async (_url: string, init: any) => {
+      signal = init.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('headers arrived, body stalls'));
+          init.signal.addEventListener('abort', () => controller.error(new Error('body aborted')), { once: true });
+        },
+      });
+      const response = new Response(body, { status: 200 });
+      resolveHeaders?.();
+      return response;
+    });
+
+    jest.useFakeTimers();
+    try {
+      const delivery = service.deliverDue();
+      await headersReceived;
+      await jest.advanceTimersByTimeAsync(10_000);
+      const result = await delivery;
+
+      expect(signal?.aborted).toBe(true);
+      expect(result).toMatchObject({ attempted: 1, delivered: 0, failed: 1 });
+      const [stored] = await dataServices.integrationWebhookDelivery.getAll().toPromise();
+      expect(stored.status).toBe('pending');
+      expect(stored.responseStatus).toBe(200);
+      expect(stored.lastError).toMatch(/body aborted/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('deliveryHistory devuelve las 50 entregas más recientes en orden descendente', async () => {
+    const repo = dataServices.integrationWebhookDelivery;
+    for (let index = 0; index < 55; index++) {
+      await repo.create({
+        tenantId,
+        eventId: 'event-history',
+        endpointId: 'endpoint-history',
+        attempt: 1,
+        maxAttempts: 6,
+        status: 'delivered',
+        createdAt: new Date(Date.UTC(2026, 0, index + 1)),
+      } as any).toPromise();
+    }
+
+    const history = await service.deliveryHistory(tenantId, 'event-history');
+
+    expect(history).toHaveLength(50);
+    const stored = await repo.find({ where: { tenantId, eventId: 'event-history' } } as any).toPromise();
+    expect(history[0].id).toBe(stored[54].id);
+    expect(history[49].id).toBe(stored[5].id);
+  });
+
   it('fallo 500 → queda pending con backoff; agotados los intentos → failed', async () => {
     await registerEndpoint();
     await service.dispatchForRequest({ tenantId, kind: 'dte', id: 'req-3' } as any, 'submitted', 'x');

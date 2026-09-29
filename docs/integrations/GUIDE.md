@@ -17,16 +17,15 @@ CmorFlow Tax API es la **plataforma tributaria central** de CmorFlow: facturaci�
 | Tipo | Prefijo keyId | Uso | Permisos |
 |---|---|---|---|
 | **API** | `cmor_live_*` | Integradores (Shopify, ERP, POS) | `dte:emit`, `dte:read`, `artifacts:read`, `rcof:submit`, `rcof:read` |
-| **Admin** | `cmor_admin_*` | Gestión de la cuenta | `credentials:read`, `credentials:write`, `webhooks:read`, `webhooks:write` |
+| **Admin** | `cmor_admin_*` | Gestión de la cuenta y configuración tributaria/visual | `credentials:read`, `credentials:write`, `webhooks:read`, `webhooks:write` |
 
-Una credencial de API **no puede** tener permisos administrativos. Así, una integración de Shopify comprometida no puede rotar las llaves de toda la cuenta.
+Una credencial de API **no puede** tener permisos administrativos, incluidos `webhooks:read` y `webhooks:write`. Así, una integración de Shopify comprometida no puede consultar entregas ni administrar endpoints de webhook.
 
 ## Permisos
 
 ```
 dte:emit          Emitir DTE y notas
 dte:read          Consultar estado
-dte:cancel        Anular (futuro)
 rcof:submit       Generar/transmitir RCOF
 rcof:read         Consultar RCOF
 artifacts:read    Descargar XML/PDF + URL firmadas
@@ -35,6 +34,8 @@ webhooks:write    Registrar/desactivar endpoints
 credentials:read  Listar credenciales
 credentials:write Crear/rotar/revocar credenciales
 ```
+
+`dte:cancel` no es un permiso aceptado en la API v1: no existe una ruta de cancelación validada. No lo solicites al crear credenciales.
 
 ## 1. Autenticación HMAC
 
@@ -61,7 +62,7 @@ METHOD\n<ruta con query>\n<sha256(body)>\n<timestamp>\n<nonce>
 
 ### Clave de firma
 
-La clave HMAC es `sha256hex(secreto)`, donde `secreto` es el valor `cmc_…` que se muestra **una sola vez** al crear o rotar la credencial. El servidor persiste únicamente ese hash, por lo que puede verificar sin conocer el secreto en claro.
+Las credenciales nuevas usan el valor `cmc_…` original como clave HMAC. Guárdalo en el gestor de secretos del integrador: el servidor lo cifra en reposo y sólo lo descifra para verificar la firma. Las claves creadas antes de esta actualización permanecen temporalmente en protocolo v1 (`sha256hex(secreto)`); rótalas para pasar a v2.
 
 ### Ejemplo en TypeScript
 
@@ -70,7 +71,7 @@ import { createHash, createHmac, randomUUID } from 'crypto';
 
 const apiKey = 'cmor_live_xxx';
 const secret = 'cmc_xxx'; // guardado de forma segura en el integrador
-const signingKey = createHash('sha256').update(secret).digest('hex');
+const signingKey = secret; // protocolo v2
 
 function signRequest(method: string, pathWithQuery: string, body: Buffer) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
@@ -116,8 +117,7 @@ NONCE=$(uuidgen)
 BODY='{"documentType":39,"items":[{"name":"Consumo agua","quantity":1,"unitPrice":45000}],"externalReference":"APR-1"}'
 BODY_HASH=$(echo -n "$BODY" | sha256sum | awk '{print $1}')
 CANONICAL="POST\n/api/v1/dtes\n${BODY_HASH}\n${TIMESTAMP}\n${NONCE}"
-SIGNING_KEY=$(echo -n "$SECRET" | sha256sum | awk '{print $1}')
-SIGNATURE=$(printf "${CANONICAL}" | openssl dgst -sha256 -hmac "${SIGNING_KEY}" | awk '{print $2}')
+SIGNATURE=$(printf "%b" "$CANONICAL" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
 
 curl -X POST https://api.cmorflow.cl/api/v1/dtes \
   -H "Content-Type: application/json" \
@@ -133,11 +133,12 @@ curl -X POST https://api.cmorflow.cl/api/v1/dtes \
 
 ### `POST /dtes`
 
-Requiere `Idempotency-Key` (UUID). Responde `202` con `requestId` y estado inicial `queued`.
+Requiere `Idempotency-Key` no vacía. Es una cadena opaca: el servidor conserva su valor y no exige formato UUID. PostgreSQL no impone una longitud de columna; aplica el límite del servidor HTTP para headers. Responde `202` con `requestId` y estado inicial `queued`.
 
 - Misma key + mismo body → misma respuesta (replay seguro).
 - Misma key + body distinto → `409 IDEMPOTENCY_CONFLICT`.
 - `externalReference` repetida con otra key → `409 EXTERNAL_REFERENCE_CONFLICT`.
+- Claves con sólo espacios se rechazan. Usa claves distintas para recursos/operaciones distintas.
 
 El servidor **recalcula y valida los totales** (IVA 19%, descuentos, redondeo CLP). Si `totals` se declara y no coincide (tolerancia $1) → `422 TOTALS_MISMATCH`.
 
@@ -169,6 +170,15 @@ Reconcilia una operación por su referencia externa de negocio.
 `queued` → `processing` → `submitted` → `accepted` | `observed` | `rejected` | `failed` | `cancelled`
 
 - `observed` = SII responde con REPARO (requiere corrección).
+- El reconciliador sigue consultando el TrackID de solicitudes `observed`; no retransmite el documento. Si SII publica un estado posterior, la solicitud pasa a `accepted` o `rejected`.
+
+## RCOF diario
+
+El worker encola el RCOF diario como una solicitud persistida, con clave estable por fecha y secuencia. El trabajo sobrevive reinicios; usa `GET /api/v1/rcof/:requestId` para consultar el estado. El mismo RCOF no se encola dos veces para un tenant/fecha/secuencia.
+
+## Alta de tenant
+
+La API no crea tenants ni guarda el perfil tributario inicial. El aprovisionamiento se completa fuera de este servicio antes de emitir: un operador autorizado debe registrar el tenant, asociar su configuración tributaria y credenciales de emisión, y comprobar CAF/PFX y datos requeridos en ambiente de certificación. El procedimiento y responsable externo pendiente están detallados en `docs/spec/TENANT_PROVISIONING.md`; no uses inserciones SQL manuales no aprobadas.
 - `failed` = reintentos agotados por fallos recuperables.
 - `cancelled` = documento anulado.
 
@@ -198,9 +208,9 @@ Los artefactos **nunca** se sirven desde buckets públicos.
 
 ## 5. Webhooks
 
-### Registro (vía API administrativa con JWT interno)
+### Registro (API administrativa con HMAC)
 
-Registrar un endpoint HTTPS con los eventos suscritos. El secreto de firma se muestra una sola vez.
+Registrar un endpoint HTTPS con una credencial `admin` HMAC y permiso `webhooks:write`. `webhooks:read` también es exclusivo de credenciales admin. El secreto de firma se muestra una sola vez.
 
 ### Firma de cada entrega
 
@@ -283,9 +293,57 @@ El sistema genera automáticamente el RCOF del día anterior (zona `America/Sant
 | `SII_UNAVAILABLE` | — | Indisponibilidad/timeout del SII (recuperable). |
 | `NOT_FOUND` | 404 | Recurso no encontrado para esta credencial. |
 
-## 8. Administración (JWT interno)
+## 8. Personalización de facturas A4
 
-Los endpoints administrativos requieren JWT con permiso `INTEGRATION_MANAGE`:
+Los endpoints de configuración usan una credencial administrativa HMAC (`cmor_admin_*`). No existe una vista previa: cada `PUT` crea y activa una versión completa de marca.
+
+```
+GET /configuration/branding       (credentials:read)
+PUT /configuration/branding       (credentials:write)
+GET /configuration/branding/logo  (credentials:read)
+```
+
+### Crear una versión de marca
+
+```json
+{
+  "logo": {
+    "mimeType": "image/png",
+    "base64": "iVBORw0KGgo..."
+  },
+  "primaryColor": "#1F4B99",
+  "secondaryColor": "#5B8DEF"
+}
+```
+
+- `logo` debe estar presente en cada `PUT`. Use `null` para una versión sin logo.
+- Se aceptan solamente PNG o JPEG en base64 estándar. SVG, URLs remotas, imágenes animadas y prefijos `data:` se rechazan.
+- El archivo de entrada puede pesar hasta 700 KB y hasta 4 megapíxeles; el servidor elimina metadatos, limita dimensiones y almacena una versión PNG de hasta 512 KB.
+- `primaryColor` debe conservar contraste suficiente con texto blanco para que las tablas del PDF sigan siendo legibles al imprimir.
+- La respuesta no incluye el base64: devuelve versión, colores, hash y tamaño. Use `GET /configuration/branding/logo` para obtener el PNG activo.
+- Al firmar un DTE, se guarda el identificador de la versión activa. Los DTE emitidos desde esta migración se regeneran con esa misma versión, aunque luego cambie el logo o los colores. Los documentos anteriores no tenían una versión visual almacenada y se reconstruyen con el diseño neutro basado en su XML firmado.
+- La marca sólo afecta la representación gráfica A4. El XML firmado, sus totales, TED y PDF417 no se modifican.
+
+Ejemplo de respuesta de `GET /configuration/branding`:
+
+```json
+{
+  "configured": true,
+  "version": 3,
+  "primaryColor": "#1F4B99",
+  "secondaryColor": "#5B8DEF",
+  "logo": {
+    "mimeType": "image/png",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb924...",
+    "bytes": 18432
+  },
+  "createdAt": "2026-09-20T15:12:45.000Z"
+}
+```
+
+## 9. Administración por API HMAC
+
+Los endpoints administrativos requieren una credencial `cmor_admin_*` con los permisos indicados:
 
 - `POST /credentials` — crear credencial (secreto una sola vez).
 - `GET /credentials` — listar enmascaradas.
@@ -296,8 +354,11 @@ Los endpoints administrativos requieren JWT con permiso `INTEGRATION_MANAGE`:
 - `POST /webhooks/:id/deactivate` — desactivar.
 - `POST /webhooks/events/:eventId/redeliver` — reenviar evento.
 - `GET /webhooks/deliveries` — historial de entregas.
+- `GET /configuration/branding` — consultar la marca activa.
+- `PUT /configuration/branding` — crear y activar una versión de marca.
+- `GET /configuration/branding/logo` — descargar el logo activo.
 
-## 9. Consideraciones operacionales
+## 10. Consideraciones operacionales
 
 - **Latencia**: la emisión es asíncrona. El `202` es inmediato; el estado `submitted` (con TrackID) puede tardar segundos a minutos según la disponibilidad del SII.
 - **Reconciler**: un cron cada 5 minutos procesa la cola, consulta el SII y entrega webhooks. La BD es la fuente de verdad: tras cualquier reinicio, el reconciler retoma todo.

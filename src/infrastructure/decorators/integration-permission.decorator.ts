@@ -1,5 +1,6 @@
 // backend/src/infrastructure/decorators/integration-permission.decorator.ts
-import { SetMetadata } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
+import { ApiExtension } from '@nestjs/swagger';
 import { IntegrationPermissionValue } from '../../application/integrations/integration-errors';
 
 export const INTEGRATION_PERMISSIONS_KEY = 'integration_permissions';
@@ -9,4 +10,8 @@ export const INTEGRATION_PERMISSIONS_KEY = 'integration_permissions';
  * IntegrationHmacGuard contra los permisos de la credencial presentada.
  */
 export const IntegrationPermission = (...permissions: IntegrationPermissionValue[]) =>
-  SetMetadata(INTEGRATION_PERMISSIONS_KEY, permissions);
+  applyDecorators(
+    SetMetadata(INTEGRATION_PERMISSIONS_KEY, permissions),
+    ApiExtension('x-auth-type', 'hmac'),
+    ApiExtension('x-required-permissions', permissions),
+  );

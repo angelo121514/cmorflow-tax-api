@@ -27,6 +27,7 @@ export interface CreateCredentialInput {
 const ADMIN_ONLY_PERMISSIONS = new Set([
   'credentials:read',
   'credentials:write',
+  'webhooks:read',
   'webhooks:write',
 ]);
 
@@ -106,6 +107,7 @@ export class IntegrationCredentialsUseCase {
         keyId,
         secretHash,
         secretEncrypted: this.encryptSecret(secret),
+        signingVersion: 'v2',
         secretLast4: secret.slice(-4),
         name: input.name.trim(),
         credentialType,
@@ -150,6 +152,7 @@ export class IntegrationCredentialsUseCase {
         keyId: c.keyId,
         name: c.name,
         credentialType: (c as any).credentialType ?? 'api',
+        signingVersion: (c as any).signingVersion ?? 'v1',
         permissions: c.permissions,
         status: c.status,
         secretLast4: `****${c.secretLast4}`,
@@ -181,7 +184,7 @@ export class IntegrationCredentialsUseCase {
     const result = await this.create(tenantId, {
       name: `${old.name} (rotada)`,
       credentialType: (old as any).credentialType ?? 'api',
-      permissions: old.permissions as IntegrationPermissionValue[],
+      permissions: (old.permissions || []).filter((permission: string) => permission !== 'dte:cancel') as IntegrationPermissionValue[],
     });
 
     await firstValueFrom(

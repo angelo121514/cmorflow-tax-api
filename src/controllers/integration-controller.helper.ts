@@ -16,10 +16,10 @@ export class IntegrationControllerHelper {
   ) {}
 
   requireIdempotencyKey(key: string | undefined): void {
-    if (!key) {
+    if (!key?.trim()) {
       throw new IntegrationApiException(
         IntegrationErrorCode.IDEMPOTENCY_KEY_REQUIRED,
-        'El header Idempotency-Key es obligatorio en emisión y anulación.',
+        'El header Idempotency-Key es obligatorio en emisión DTE/notas y RCOF.',
         400,
       );
     }
@@ -32,11 +32,13 @@ export class IntegrationControllerHelper {
     idempotencyKey: string,
     rawBody: Buffer | string | undefined,
     payload: any,
+    resourceKey?: string,
   ) {
     const { request, replayed } = await this.requestService.enqueue({
       tenantId, credentialId, kind, idempotencyKey,
       rawBody: rawBody ? rawBody.toString() : '',
       payload,
+      resourceKey,
       externalReference: payload.externalReference,
       metadata: payload.metadata,
     });

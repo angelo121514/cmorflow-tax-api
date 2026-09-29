@@ -37,7 +37,6 @@ export const INTEGRATION_PERMISSIONS = [
   // Operacionales (credencial de API: cmor_live_*)
   'dte:emit',
   'dte:read',
-  'dte:cancel',
   'rcof:submit',
   'rcof:read',
   'artifacts:read',

@@ -6,6 +6,7 @@ export * from './integration-webhook-endpoint.entity';
 export * from './integration-webhook-event.entity';
 export * from './integration-webhook-delivery.entity';
 export * from './dte-document.entity';
+export * from './invoice-brand-profile.entity';
 export * from './sii-submission.entity';
 export * from './tenant.entity';
 export * from './tenant-config.entity';

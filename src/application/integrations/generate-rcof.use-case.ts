@@ -14,7 +14,7 @@ import { IntegrationErrorCode } from './integration-errors';
 /**
  * Ciclo completo del RCOF: consolidar boletas 39/41 del día (con folios
  * anulados), firmar, PERSISTIR (idempotente por tenant+fecha+secuencia) y
- * TRANSMITIR al SII dentro de un sobre EnvioBOLETA, conservando TrackID.
+ * TRANSMITIR al SII por su canal ConsumoFolio, conservando TrackID.
  *
  * Extrae y centraliza la lógica que vivía inline en DteController para que
  * tanto la fachada interna como la B2B usen el mismo flujo.
@@ -70,7 +70,8 @@ export class GenerateRcofUseCase {
       }),
     );
     if (existing) {
-      return existing;
+      if (existing.trackId || ['accepted', 'observed', 'rejected'].includes(existing.status)) return existing;
+      return this.transmit(tenantId, existing);
     }
 
     const summaries = await this.consolidateDay(tenantId, input.date);
@@ -102,8 +103,8 @@ export class GenerateRcofUseCase {
   /** Reintentar la transmisión de un RCOF persistido (reconciler). */
   async transmit(tenantId: string, rcof: RcofSubmissionEntity): Promise<RcofSubmissionEntity> {
     try {
-      const { envelopeXml, token } = await this.buildEnvelope(tenantId, rcof.xmlContent);
-      const result = await firstValueFrom(this.siiSoapClient.sendDteEnvelope(envelopeXml, token));
+      const token = await this.getToken(tenantId);
+      const result = await firstValueFrom(this.siiSoapClient.sendRcof(rcof.xmlContent, token));
       const updated = await firstValueFrom(
         this.dataServices.rcofSubmission.update(rcof.id!, {
           trackId: result.trackId,
@@ -132,9 +133,8 @@ export class GenerateRcofUseCase {
       return rcof;
     }
     try {
-      const result = await firstValueFrom(
-        this.siiSoapClient.queryTrackStatus(rcof.trackId, 'rcof-poll'),
-      );
+      const token = await this.getToken(tenantId);
+      const result = await firstValueFrom(this.siiSoapClient.queryTrackStatus(rcof.trackId, token));
       const mapped: RcofSubmissionEntity['status'] =
         result.status === 'ACEPTADO'
           ? 'accepted'
@@ -241,19 +241,14 @@ export class GenerateRcofUseCase {
     return signedXml;
   }
 
-  private async buildEnvelope(
-    tenantId: string,
-    signedRcofXml: string,
-  ): Promise<{ envelopeXml: string; token: string }> {
+  private async getToken(tenantId: string): Promise<string> {
     const tenant = await firstValueFrom(this.dataServices.tenant.get(tenantId));
     const signature = await this.tenantConfigService.getDecryptedSignature(tenantId);
     let pfxBase64: string;
     let password: string;
-    let senderRut: string;
     if (signature) {
       pfxBase64 = signature.pfxBase64;
       password = signature.passwordString;
-      senderRut = signature.metadata?.representativeRut || tenant!.rut;
     } else {
       const cert = CertificateUtils.generateMockChileanCertificate(
         tenant!.rut,
@@ -263,29 +258,12 @@ export class GenerateRcofUseCase {
       );
       pfxBase64 = cert.pfxBase64;
       password = cert.password;
-      senderRut = '12345678-9';
     }
 
-    // En modo real, una configuración tributaria inválida debe bloquear el RCOF.
-    // No se degrada silenciosamente a valores por defecto.
-    const taxProfile = await this.tenantConfigService.requireTaxProfileForRealEmission(tenantId);
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
-
-    const envelope = this.dteXmlEngine.buildEnvioBoleta({
-      issuerRut: tenant!.rut,
-      senderRut,
-      signedDtes: [signedRcofXml],
-      resolutionDate: (taxProfile as any)?.resolutionDate,
-      resolutionNumber: (taxProfile as any)?.resolutionNumber,
-      softwareProvider: (tenantConfig as any)?.softwareProvider,
-    } as any);
-    const { signedXml } = this.signatureEngine.signXml(envelope, pfxBase64, password, 'EnvioBOLETA');
-
-    const token: string = await this.siiAuthTokenService.getToken(tenantId, {
+    return this.siiAuthTokenService.getToken(tenantId, {
       pfxBase64,
       password,
-    } as any);
-    return { envelopeXml: signedXml, token };
+    });
   }
 
   private static extractXmlValue(xml: string, tag: string): string | undefined {

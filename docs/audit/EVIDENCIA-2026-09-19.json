@@ -1,0 +1,246 @@
+{
+  "auditedCommit": "b44eb41f0a713affdec6e2dbde343efb58664507",
+  "date": "2026-09-19",
+  "unitTests": {
+    "suites": 18,
+    "passed": 93
+  },
+  "e2eTests": {
+    "skipped": 6,
+    "passed": 3
+  },
+  "localRuntime": "Node 24.19.0",
+  "requiredRuntime": "Node 22",
+  "behavioral": {
+    "totals": [
+      {
+        "name": "gross",
+        "validated": {
+          "netAmount": 1190,
+          "exemptAmount": 0,
+          "ivaAmount": 226,
+          "totalAmount": 1416
+        },
+        "emitted": {
+          "netAmount": 1000,
+          "exemptAmount": 0,
+          "ivaAmount": 190,
+          "totalAmount": 1190
+        },
+        "declaredResult": {
+          "status": 422,
+          "message": "Integration Api Exception"
+        }
+      },
+      {
+        "name": "globalDiscount",
+        "validated": {
+          "netAmount": 1190,
+          "exemptAmount": 0,
+          "ivaAmount": 226,
+          "totalAmount": 1416
+        },
+        "emitted": {
+          "netAmount": 1071,
+          "exemptAmount": 0,
+          "ivaAmount": 203,
+          "totalAmount": 1274,
+          "globalDiscountAmount": 119
+        },
+        "declaredResult": {
+          "status": 422,
+          "message": "Integration Api Exception"
+        }
+      },
+      {
+        "name": "retention",
+        "validated": {
+          "netAmount": 1190,
+          "exemptAmount": 0,
+          "ivaAmount": 226,
+          "totalAmount": 1416
+        },
+        "emitted": {
+          "netAmount": 1190,
+          "exemptAmount": 0,
+          "ivaAmount": 226,
+          "totalAmount": 1190,
+          "retentionAmount": 226
+        },
+        "declaredResult": {
+          "status": 422,
+          "message": "Integration Api Exception"
+        }
+      }
+    ],
+    "boletaWithoutReceiver": {
+      "dtoErrors": 0,
+      "validated": {
+        "netAmount": 1000,
+        "exemptAmount": 0,
+        "ivaAmount": 190,
+        "totalAmount": 1190
+      },
+      "emissionError": "Cannot read properties of undefined (reading 'slice')"
+    },
+    "booleanString": true,
+    "databaseHashAuthenticatesEncryptedCredential": true,
+    "crossOperationIdempotency": {
+      "replayed": true,
+      "returnedKind": "credit-note",
+      "returnedPayload": {
+        "originalDteId": "A"
+      }
+    },
+    "rcofRetry": {
+      "sends": 1,
+      "returnedStatus": "failed",
+      "trackId": null
+    },
+    "rcofPollingToken": "rcof-poll",
+    "rcofLinkAfterProcessing": {
+      "status": "submitted",
+      "rcofId": null
+    },
+    "privateIpChecks": {
+      "127.0.0.1": true,
+      "::ffff:127.0.0.1": true,
+      "::ffff:7f00:1": false,
+      "fe90::1": false
+    }
+  },
+  "http": [
+    {
+      "status": 202,
+      "name": "invoiceAccepted"
+    },
+    {
+      "status": 202,
+      "name": "sameBodyReplay"
+    },
+    {
+      "status": 409,
+      "name": "changedBodyConflict"
+    },
+    {
+      "status": 200,
+      "name": "ownTenantRead"
+    },
+    {
+      "status": 404,
+      "name": "otherTenantRead"
+    },
+    {
+      "status": 422,
+      "name": "grossCorrectTotalRejected"
+    },
+    {
+      "status": 202,
+      "name": "boletaWithoutReceiverAccepted"
+    },
+    {
+      "status": 500,
+      "name": "twoDiscounts500"
+    },
+    {
+      "status": 202,
+      "name": "unknownPricingModeAccepted"
+    },
+    {
+      "status": 202,
+      "name": "stringFalseAccepted"
+    },
+    {
+      "status": 400,
+      "name": "payloadTenantRejected"
+    },
+    {
+      "status": 401,
+      "name": "missingHmacHeaders"
+    }
+  ],
+  "xml": {
+    "seed.xml": {
+      "wellFormed": false,
+      "error": "Extra content at the end of the document, line 2, column 1 (file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/seed.xml, line 2)"
+    },
+    "dte-33.xml": {
+      "wellFormed": true,
+      "signatures": [
+        {
+          "target": "#DocumentoDTE",
+          "rsaValidOnRawNonstandardBytes": true,
+          "rsaValidAfterC14N": false,
+          "digestValidAfterC14N": true
+        }
+      ]
+    },
+    "dte-39.xml": {
+      "wellFormed": true,
+      "signatures": [
+        {
+          "target": "#DocumentoDTE",
+          "rsaValidOnRawNonstandardBytes": true,
+          "rsaValidAfterC14N": false,
+          "digestValidAfterC14N": true
+        }
+      ]
+    },
+    "envelope-33.xml": {
+      "wellFormed": true,
+      "signatures": [
+        {
+          "target": "#DocumentoDTE",
+          "rsaValidOnRawNonstandardBytes": true,
+          "rsaValidAfterC14N": false,
+          "digestValidAfterC14N": false
+        },
+        {
+          "target": "#EnvioDTE",
+          "rsaValidOnRawNonstandardBytes": true,
+          "rsaValidAfterC14N": false,
+          "digestValidAfterC14N": false
+        }
+      ]
+    },
+    "envelope-39.xml": {
+      "wellFormed": false,
+      "error": "Extra content at the end of the document, line 4, column 1 (file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/envelope-39.xml, line 4)"
+    },
+    "officialInvoice": {
+      "valid": false,
+      "errors": [
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/envelope-33.xml:2:0:ERROR:SCHEMASV:SCHEMAV_CVC_COMPLEX_TYPE_3_2_1: Element '{http://www.sii.cl/SiiDte}EnvioDTE', attribute 'ID': The attribute 'ID' is not allowed.",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/envelope-33.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}Caratula': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}SubTotDTE ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/envelope-33.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}DA': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}IDK ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/envelope-33.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}Documento': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}TmstFirma )."
+      ]
+    },
+    "bundledInvoice": {
+      "valid": true,
+      "errors": []
+    },
+    "bundledBoletaUnsignedEnvelope": {
+      "valid": false,
+      "errors": [
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_CVC_COMPLEX_TYPE_3_2_1: Element '{http://www.sii.cl/SiiDte}EnvioBOLETA', attribute 'ID': The attribute 'ID' is not allowed.",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}Caratula': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}SubTotDTE ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}RznSoc': This element is not expected. Expected is one of ( {http://www.sii.cl/SiiDte}RznSocEmisor, {http://www.sii.cl/SiiDte}GiroEmisor, {http://www.sii.cl/SiiDte}CdgSIISucur, {http://www.sii.cl/SiiDte}DirOrigen, {http://www.sii.cl/SiiDte}CmnaOrigen, {http://www.sii.cl/SiiDte}CiudadOrigen ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}TasaIVA': This element is not expected. Expected is one of ( {http://www.sii.cl/SiiDte}MntExe, {http://www.sii.cl/SiiDte}IVA, {http://www.sii.cl/SiiDte}MntTotal ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}DA': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}IDK ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}Documento': Missing child element(s). Expected is ( {http://www.sii.cl/SiiDte}TmstFirma ).",
+        "file:/C:/Users/angel/Desktop/Code/cmorflow-tax-api/coverage/audit-2026-09-19/unsigned-envelope-39.xml:2:0:ERROR:SCHEMASV:SCHEMAV_ELEMENT_CONTENT: Element '{http://www.sii.cl/SiiDte}EnvioBOLETA': Missing child element(s). Expected is ( {http://www.w3.org/2000/09/xmldsig#}Signature )."
+      ]
+    }
+  },
+  "render": {
+    "serviceId": "srv-da2bteou01pc73eb6qrg",
+    "healthCheckPath": "",
+    "deployCommit": "49bb9d80c1e4e7826dc4087a9e633886528b4673",
+    "observedError": "(ENOTFOUND) tenant/user tax_api_app.wirwadxtrbrslfwayple not found",
+    "plan": "free",
+    "taxWorkerFound": false,
+    "observedAtUtc": "2026-09-19T15:21:16Z",
+    "runtime": "node"
+  }
+}

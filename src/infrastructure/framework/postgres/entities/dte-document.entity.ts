@@ -1,10 +1,12 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { TenantEntity } from './tenant.entity';
+import { InvoiceBrandProfileEntity } from './invoice-brand-profile.entity';
 
 @Entity('dte_documents')
 @Index('IDX_dte_documents_tenantId', ['tenantId'])
 @Index('UQ_dte_documents_tenant_type_folio', ['tenantId', 'type', 'folio'], { unique: true })
 @Index('IDX_dte_documents_tenant_status_created', ['tenantId', 'status', 'createdAt'])
+@Index('IDX_dte_documents_brand_profile', ['brandProfileId'])
 export class DteDocumentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -30,6 +32,9 @@ export class DteDocumentEntity {
   @Column({ name: 'xml_content', type: 'text' })
   xmlContent: string;
 
+  @Column({ name: 'brand_profile_id', type: 'uuid', nullable: true })
+  brandProfileId: string | null;
+
   @Column({ name: 'signature_value', type: 'text', nullable: true })
   signatureValue: string;
 
@@ -51,6 +56,21 @@ export class DteDocumentEntity {
   @ManyToOne(() => TenantEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'tenant_id' })
   tenant: TenantEntity;
+
+  /**
+   * La clave compuesta evita que un DTE de un tenant apunte a la marca de otro.
+   * `brand_profile_id` puede ser null para DTE históricos sin personalización.
+   */
+  @ManyToOne(() => InvoiceBrandProfileEntity, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn([
+    {
+      name: 'brand_profile_id',
+      referencedColumnName: 'id',
+      foreignKeyConstraintName: 'FK_dte_documents_brand_profile',
+    },
+    { name: 'tenant_id', referencedColumnName: 'tenantId' },
+  ])
+  brandProfile: InvoiceBrandProfileEntity | null;
 
   @DeleteDateColumn({ name: 'deleted_at', nullable: true })
   deletedAt: Date;

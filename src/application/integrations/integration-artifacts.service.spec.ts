@@ -20,4 +20,26 @@ describe('IntegrationArtifactsService', () => {
       expect(error.getResponse().error.message).toBe('Token inválido.');
     }
   });
+
+  it('reconstruye el PDF con el perfil visual fijado al DTE', async () => {
+    const dteDocument = new MemoryGenericRepository<any>();
+    const tenant = new MemoryGenericRepository<any>();
+    const invoiceBrandProfile = new MemoryGenericRepository<any>();
+    const profile = await invoiceBrandProfile.create({
+      id: 'brand-1', tenantId: 'tenant-1', version: 2,
+      primaryColor: '#123456', secondaryColor: '#ABCDEF', logoData: null,
+    }).toPromise();
+    const dte = await dteDocument.create({
+      id: 'dte-1', tenantId: 'tenant-1', type: 33, folio: 10,
+      brandProfileId: profile!.id, xmlContent: '<DTE />',
+    }).toPromise();
+    await tenant.create({ id: 'tenant-1', businessName: 'Empresa' }).toPromise();
+    const pdfGenerator = { generateDtePdf: jest.fn().mockResolvedValue(Buffer.from('pdf')) };
+    const service = new IntegrationArtifactsService({ dteDocument, tenant, invoiceBrandProfile } as any, pdfGenerator as any);
+
+    const result = await service.getPdf('tenant-1', dte!.id);
+
+    expect(result.pdf.toString()).toBe('pdf');
+    expect(pdfGenerator.generateDtePdf).toHaveBeenCalledWith(dte, expect.objectContaining({ id: 'tenant-1' }), profile);
+  });
 });
