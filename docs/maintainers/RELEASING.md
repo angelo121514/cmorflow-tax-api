@@ -19,8 +19,6 @@ Estas opciones requieren configuración en el repositorio remoto:
 - Revisa permisos de colaboradores, secretos de Actions y entornos de despliegue.
 - Revisa el historial para detectar secretos o datos privados antes de cambiar la visibilidad. repo:check detecta nombres de archivos privados versionados; no sustituye una revisión de contenido/historial.
 
-## Publicación
-
 ## Configuración aplicada (2026-09-28)
 
 En angelo121514/cmorflow-tax-api se habilitaron reportes privados de vulnerabilidades. main exige PR, check backend de GitHub Actions con base actualizada, resolución de conversaciones e historial lineal; también afecta al administrador. No permite force push ni eliminación. El mínimo de aprobaciones es cero mientras sólo exista el propietario como mantenedor; elevarlo a una al incorporar otro mantenedor capaz de revisar.

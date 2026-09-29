@@ -36,4 +36,4 @@ El escáner busca patrones conocidos y no garantiza ausencia de todos los secret
 
 GitHub confirmó reportes privados de vulnerabilidades habilitados y main protegido: PR obligatorio, backend de GitHub Actions aprobado sobre base actualizada, admins sujetos a las reglas, historial lineal, conversaciones resueltas, sin force push ni eliminación. El mínimo de aprobaciones es cero porque sólo existe el mantenedor propietario.
 
-Se actualizan checkout/setup-node a releases oficiales v7 fijadas por SHA para retirar el aviso de runtime obsoleto detectado en esa ejecución. Se repite CI sobre el ajuste antes de integrar.
+Se actualizan checkout/setup-node a releases oficiales v7 fijadas por SHA para retirar el aviso de runtime obsoleto detectado en esa ejecución. Las validaciones de los commits posteriores se consultan en los checks del PR; main exige que estén aprobadas para integrar.

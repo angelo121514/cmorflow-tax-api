@@ -56,13 +56,11 @@ Después de corregir recuperación RCOF, fallo cerrado HMAC v2 y la migración b
 
 El escaneo Gitleaks del historial revisó 13 commits sin detecciones. El escaneo del diff encontró sólo la clave sintética de idempotencia de un test; la anotación está limitada a esa línea. El informe [PUBLICATION_REVIEW-2026-09-28.md](../audit/PUBLICATION_REVIEW-2026-09-28.md) describe alcance y seguimiento remoto.
 
-## Cobertura que sigue pendiente
-
 ## Primera ejecución remota completa (2026-09-28 en Chile)
 
 [CI 36509848966](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/36509848966) aprobó el commit `ee92bf6`: Node 22, PostgreSQL 16, 29 suites/140 tests unitarios, 4 suites/10 tests e2e **sin omisiones**, 18 tests del checker, trazabilidad, contrato y build Docker con Node 22.12.0. Esto confirma las pruebas de PostgreSQL incluidas en el repo; no valida todos los escenarios de caída ni SII real.
 
-El aviso de runtime obsoleto de checkout/setup-node motivó actualizarlas a sus releases oficiales v7 y fijarlas por SHA. La siguiente corrida debe confirmar este ajuste y la documentación final antes de integrar.
+El aviso de runtime obsoleto de checkout/setup-node motivó actualizarlas a sus releases oficiales v7 y fijarlas por SHA. CI comprueba estos ajustes en cada commit del PR antes de integrar.
 
 ## Brechas funcionales que siguen pendientes
 
