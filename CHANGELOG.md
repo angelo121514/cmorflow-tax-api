@@ -31,4 +31,4 @@ Este archivo registra cambios visibles para integradores y mantenedores. Las dec
 ### Validaciones pendientes
 
 - Confirmación tributaria de T46, procedimiento operativo de tenants y evidencia SII.
-- Resultados de PostgreSQL 16 y build de imagen deben confirmarse en un entorno disponible; esta entrada no equivale a una versión publicada.
+- CI aprobó PostgreSQL 16 y el build de imagen; esta entrada no equivale a certificación SII ni a una versión publicada.

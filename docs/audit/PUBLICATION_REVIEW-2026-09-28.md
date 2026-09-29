@@ -28,4 +28,12 @@ Las decisiones de retenciones T46, aprobación de XML/firma en SII, provisioning
 
 El repositorio remoto ya es público. Se mantiene la licencia pendiente por indicación del autor. Sólo hay un mantenedor; la protección de main exigirá PR y CI, sin requerir una revisión imposible del propio autor. Se exigirá revisión de otro mantenedor cuando haya uno disponible.
 
-El resultado remoto y configuración aplicada se añadirán al completar CI. El escáner busca patrones conocidos y no garantiza ausencia de todos los secretos.
+El escáner busca patrones conocidos y no garantiza ausencia de todos los secretos.
+
+## Resultado remoto y configuración aplicada
+
+[PR #1](https://github.com/angelo121514/cmorflow-tax-api/pull/1) contiene el conjunto revisado. [CI 36509848966](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/36509848966) aprobó ee92bf6: 140 tests unitarios, 10 e2e sin omisiones con PostgreSQL 16, 18 del checker, contrato y build Docker. La ejecución usa Node 22; el Dockerfile usa 22.12.0.
+
+GitHub confirmó reportes privados de vulnerabilidades habilitados y main protegido: PR obligatorio, backend de GitHub Actions aprobado sobre base actualizada, admins sujetos a las reglas, historial lineal, conversaciones resueltas, sin force push ni eliminación. El mínimo de aprobaciones es cero porque sólo existe el mantenedor propietario.
+
+Se actualizan checkout/setup-node a releases oficiales v7 fijadas por SHA para retirar el aviso de runtime obsoleto detectado en esa ejecución. Se repite CI sobre el ajuste antes de integrar.

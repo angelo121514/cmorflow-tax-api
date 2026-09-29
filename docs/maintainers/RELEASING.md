@@ -21,6 +21,12 @@ Estas opciones requieren configuración en el repositorio remoto:
 
 ## Publicación
 
+## Configuración aplicada (2026-09-28)
+
+En angelo121514/cmorflow-tax-api se habilitaron reportes privados de vulnerabilidades. main exige PR, check backend de GitHub Actions con base actualizada, resolución de conversaciones e historial lineal; también afecta al administrador. No permite force push ni eliminación. El mínimo de aprobaciones es cero mientras sólo exista el propietario como mantenedor; elevarlo a una al incorporar otro mantenedor capaz de revisar.
+
+## Preparar la publicación
+
 Actualiza CHANGELOG.md y el estado del README. Define versión y etiqueta sólo después de revisar el resultado de CI. Marca como experimental cualquier versión cuya certificación SII o reglas tributarias sigan pendientes.
 
 Conserva una vía reproducible de instalación con Node 22, PostgreSQL 16 y modo SII mock. No distribuyas archivos de entorno reales, PFX ni CAF privados. El certificado público de confianza en certs/ no es una llave privada.

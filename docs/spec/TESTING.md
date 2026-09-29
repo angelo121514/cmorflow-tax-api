@@ -58,6 +58,14 @@ El escaneo Gitleaks del historial revisó 13 commits sin detecciones. El escaneo
 
 ## Cobertura que sigue pendiente
 
+## Primera ejecución remota completa (2026-09-28 en Chile)
+
+[CI 36509848966](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/36509848966) aprobó el commit `ee92bf6`: Node 22, PostgreSQL 16, 29 suites/140 tests unitarios, 4 suites/10 tests e2e **sin omisiones**, 18 tests del checker, trazabilidad, contrato y build Docker con Node 22.12.0. Esto confirma las pruebas de PostgreSQL incluidas en el repo; no valida todos los escenarios de caída ni SII real.
+
+El aviso de runtime obsoleto de checkout/setup-node motivó actualizarlas a sus releases oficiales v7 y fijarlas por SHA. La siguiente corrida debe confirmar este ajuste y la documentación final antes de integrar.
+
+## Brechas funcionales que siguen pendientes
+
 - No hay suite que pruebe cada ruta HTTP con guards/DTOs/códigos/contratos; los e2e visibles cubren auth, boot y runtime más DB.
 - No hay prueba con conexión/certificado de SII real; SOAP normalmente se prueba con mock/Fetch simulado.
 - No se encuentra prueba de recuperación de worker tras caída entre reserva de folio, persistencia DTE, vínculo a request y transmisión.
