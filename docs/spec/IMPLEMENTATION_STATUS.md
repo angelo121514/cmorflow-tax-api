@@ -16,3 +16,5 @@ Revisión 2026-10-13. Baseline de runtime a2aef05; esta entrega sólo cambia lic
 [Informe de validación](VALIDATION_REPORT.md) registra únicamente resultados ejecutados. Los checkboxes históricos de 0001 conservan su estado original; no se marcan como cumplidos sin revisión semántica específica.
 
 El gate de dependencias actual detecta avisos high/critical en paquetes existentes: TASK-007. La entrega no está habilitada para integrar hasta obtener backend aprobado.
+
+CI 38484270148 aprobó 140 unitarios, 10 e2e PostgreSQL 16, checker, OpenAPI y Docker; el job falla sólo por el gate de dependencias. Ver [evidencia](VALIDATION_REPORT.md).

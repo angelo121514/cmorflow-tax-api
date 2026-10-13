@@ -12,8 +12,8 @@ Se conservan F-xx, BR-xx y D-xxx. Constitución, modelo de amenazas, plan y tare
 
 - [x] LICENSE y manifiestos declaran MIT con atribución; private permanece true.
 - [x] SDD documenta comparación, amenazas y tareas con responsable y evidencia.
-- [ ] Checker rechaza documentos ausentes, enlaces rotos y tareas incompletas.
-- [ ] Validaciones locales y CI quedan registradas con omisiones explícitas.
+- [x] Checker rechaza documentos ausentes, enlaces rotos y tareas incompletas.
+- [x] Validaciones locales y CI quedan registradas con omisiones explícitas.
 
 ## Pruebas y trazabilidad
 

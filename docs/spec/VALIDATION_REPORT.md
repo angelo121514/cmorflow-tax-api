@@ -22,3 +22,7 @@ Los resultados históricos están en [TESTING](TESTING.md).
 ## Alcance
 
 El checker valida presencia, enlaces locales y estructura de tareas, no semántica de cobertura ni eficacia en producción. MIT coherente en manifiestos no determina licencias de recursos externos: [avisos](../../THIRD_PARTY_NOTICES.md), TASK-006. La comparación no ejecuta suites de los repositorios de referencia.
+
+## Evidencia remota
+
+[PR #2](https://github.com/angelo121514/cmorflow-tax-api/pull/2), [CI 38484270148](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/38484270148) sobre 9c325fc: Node 22, checker, trazabilidad, 140 unitarios, 10 e2e PostgreSQL 16, OpenAPI y Docker aprobados. El job termina failure exclusivamente en Dependency security gate por los seis avisos registrados. No se integra ni despliega; se conserva la protección backend obligatoria. El commit posterior sólo actualiza esta evidencia y los criterios documentales; sus checks siguen siendo obligatorios antes de integrar.
