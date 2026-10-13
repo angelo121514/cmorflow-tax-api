@@ -43,3 +43,5 @@ Seguimiento: [CI 36509848966](https://github.com/angelo121514/cmorflow-tax-api/a
 ## Diferencia con auditoría histórica
 
 docs/audit/AUDITORIA-2026-09-19.md informa un estado de código anterior/no modificado. La working tree analizada ahora difiere en archivos de auth, firma XML, totales, worker, branding, migraciones y tests. Algunos hallazgos del informe histórico ya no coinciden con el código observado: por ejemplo, guard actual maneja signing_version v2 con secreto descifrado; reserva de folio fija app.tenant_id; firma usa xml-crypto; recálculo pasa opciones de pricing/descuentos/retenciones; processor guarda vínculo RCOF actualizado. No se importan esos hallazgos como defectos actuales sin reproducirlos.
+
+El seguimiento vigente de pendientes con prioridades y aceptación está en [TASKS](TASKS.md). Las filas anteriores conservan evidencia histórica; [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) distingue su estado actual.

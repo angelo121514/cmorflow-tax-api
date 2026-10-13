@@ -29,7 +29,7 @@ Actualiza CHANGELOG.md y el estado del README. Define versión y etiqueta sólo 
 
 Conserva una vía reproducible de instalación con Node 22, PostgreSQL 16 y modo SII mock. No distribuyas archivos de entorno reales, PFX ni CAF privados. El certificado público de confianza en certs/ no es una llave privada.
 
-La decisión de licencia queda pendiente para una tarea posterior. La apertura pública y el despliegue requieren sus decisiones correspondientes; este procedimiento prepara la revisión.
+Desde 2026-10-13 el código original se distribuye bajo MIT. Verifica LICENSE y la licencia raíz de ambos manifiestos; conserva los avisos de THIRD_PARTY_NOTICES.md. La publicación npm sigue deshabilitada por private: true. El despliegue y la certificación mantienen sus gates propios.
 
 ## Aprobaciones externas
 

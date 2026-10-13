@@ -16,6 +16,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY start-prod.js start-worker.js start-migrate.js ./
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 USER node
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "start-prod.js"]

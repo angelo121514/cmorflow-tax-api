@@ -170,4 +170,4 @@ Extraído del ERP CmorFlow (`feat/b2b-integrations-api` sobre `staging`/`a808ad4
 
 ## Licencia
 
-UNLICENSED — CmorFlow 2026
+Código abierto bajo [licencia MIT](LICENSE), Copyright (c) 2026 CmorFlow contributors. Los componentes de terceros conservan sus condiciones: [avisos](THIRD_PARTY_NOTICES.md).

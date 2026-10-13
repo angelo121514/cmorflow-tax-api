@@ -24,3 +24,9 @@
 - [Preparar una versión](maintainers/RELEASING.md): Git, CI y configuración del repositorio.
 
 Los informes bajo audit/ y la auditoría inicial en spec/AUDIT_REPORT.md son registros históricos. Para conocer el estado vigente, consulta decisiones, deuda y resultados fechados; un hallazgo histórico puede estar resuelto.
+
+## Gobierno SDD y licencia
+
+- [Constitución](spec/CONSTITUTION.md), [amenazas](spec/THREAT_MODEL.md) y [plan](spec/PLAN.md).
+- [Tareas](spec/TASKS.md), [estado](spec/IMPLEMENTATION_STATUS.md) y [validación](spec/VALIDATION_REPORT.md).
+- [Comparación](spec/COMPARISON_REPORT.md) con los proyectos de referencia.

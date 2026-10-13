@@ -9,6 +9,7 @@ const {
   gitDiff,
   repoPath,
   relevantChange,
+  GOVERNANCE_DOCS,
 } = require("../../scripts/check-sdd-traceability.cjs");
 const {
   privateFile,
@@ -52,6 +53,17 @@ function fixture(t) {
       throw new Error("Unsafe cleanup path");
     fs.rmSync(root, { recursive: true, force: true });
   });
+  for (const file of GOVERNANCE_DOCS)
+    write(
+      root,
+      file,
+      "# Gobierno SDD\n\nDocumento de seguimiento con evidencia y límites explícitos.\n",
+    );
+  write(
+    root,
+    "docs/spec/TASKS.md",
+    "# Tareas\n\n| ID | Prioridad | Estado | Responsable | Dependencia | Criterio de aceptación | Evidencia exigida | Referencias |\n|---|---|---|---|---|---|---|---|\n| TASK-001 | P1 | Pendiente | Backend | DB desechable | Recupera sin duplicar | Test PostgreSQL | [Feature](FEATURES.md) |\n",
+  );
   const data = {
     features: ["F-01"],
     specs: ["docs/spec/FEATURES.md"],
@@ -330,4 +342,58 @@ test("checks Git ignore behavior and detects a forcibly tracked environment file
       message.includes("Archivo privado versionado: .env.local"),
     ),
   );
+});
+
+for (const file of GOVERNANCE_DOCS) {
+  test("rejects missing mandatory governance document: " + file, (t) => {
+    const { root } = fixture(t);
+    fs.unlinkSync(path.join(root, file));
+    hasError(validateRepository(root), /No se puede leer/);
+  });
+}
+test("rejects broken local links in governance documents", (t) => {
+  const { root } = fixture(t);
+  fs.appendFileSync(
+    path.join(root, "docs/spec/PLAN.md"),
+    "\n[Missing](missing.md)\n",
+  );
+  hasError(validateRepository(root), /archivo inexistente.*missing/);
+});
+for (const field of [
+  "Backend",
+  "Recupera sin duplicar",
+  "Test PostgreSQL",
+  "DB desechable",
+]) {
+  test("rejects incomplete task field: " + field, (t) => {
+    const { root } = fixture(t);
+    const file = path.join(root, "docs/spec/TASKS.md");
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(field, ""));
+    hasError(validateRepository(root), /faltan campos de seguimiento/);
+  });
+}
+test("rejects duplicate task IDs and invalid priority or state", (t) => {
+  const { root } = fixture(t);
+  const file = path.join(root, "docs/spec/TASKS.md");
+  const original = fs.readFileSync(file, "utf8");
+  fs.appendFileSync(
+    file,
+    original.split("\n").find((line) => line.startsWith("| TASK-")) + "\n",
+  );
+  hasError(validateRepository(root), /ID inválido o duplicado/);
+  fs.writeFileSync(
+    file,
+    original.replace("| P1 | Pendiente |", "| P9 | Unknown |"),
+  );
+  const result = validateRepository(root);
+  hasError(result, /prioridad inválida/);
+  hasError(result, /estado inválido/);
+});
+test("rejects governance links escaping the repository", (t) => {
+  const { root } = fixture(t);
+  fs.appendFileSync(
+    path.join(root, "docs/spec/PLAN.md"),
+    "\n[Escape](../../../private.md)\n",
+  );
+  hasError(validateRepository(root), /fuera del repositorio/);
 });

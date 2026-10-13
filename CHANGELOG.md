@@ -4,6 +4,13 @@ Este archivo registra cambios visibles para integradores y mantenedores. Las dec
 
 ## Unreleased
 
+### MIT y alineación SDD — 2026-10-13
+
+- Código original bajo MIT; avisos separados para recursos externos.
+- Constitución, modelo de amenazas, comparación SDD, tareas y estado de implementación.
+- CI verifica documentos obligatorios, enlaces locales y seguimiento completo de tareas.
+- Sin cambios de HTTP, esquema, tipos públicos ni reglas tributarias.
+
 ### Organización y contribución
 
 - Flujo SDD por PR con fichas de cambio, referencias verificables y cobertura del diff en CI.
