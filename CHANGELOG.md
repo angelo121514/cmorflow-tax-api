@@ -4,6 +4,12 @@ Este archivo registra cambios visibles para integradores y mantenedores. Las dec
 
 ## Unreleased
 
+Sin cambios posteriores registrados.
+
+## 1.0.0-oss.1 — 2026-10-14 (prerelease)
+
+Primera edición pública identificada bajo MIT. Incluye SDD verificable, documentación de instalación/contribución y correcciones de seguridad/fiabilidad. Certificación SII/T46 pendiente. La publicación en GitHub se realiza con despliegue Render manual.
+
 ### Seguridad y recuperación — 2026-10-14
 
 - Sustituye node-forge por Node crypto/OpenSSL; actualiza dependencias y runner Jest.
@@ -12,7 +18,6 @@ Este archivo registra cambios visibles para integradores y mantenedores. Las dec
 - Migración añade transmission_started_at; aplicar antes del worker. No admite rollback que pierda ese marcador.
 - XSD SII y CA Supabase ahora se proveen externamente; montar recursos antes de actualizar en entornos reales. Docker incluye OpenSSL.
 - CLI tenant:provision para una base independiente; bootstrap usa RLS y transacción.
-
 
 ### MIT y alineación SDD — 2026-10-13
 

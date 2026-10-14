@@ -1,6 +1,16 @@
 # CmorFlow Tax API
 
-Plataforma tributaria B2B para facturación electrónica chilena vía API.
+**Código abierto bajo [licencia MIT](LICENSE) · Versión 1.0.0-oss.1 (prerelease).**
+
+Plataforma tributaria B2B para facturación electrónica chilena vía API: DTE, RCOF, XML/PDF y webhooks. NestJS, Node 22, PostgreSQL 16 y OpenSSL 3.
+
+Puedes usar, modificar, distribuir y vender el código original, conservando el aviso de copyright y el texto MIT. Se entrega sin garantía. Los componentes externos conservan sus [licencias y condiciones](THIRD_PARTY_NOTICES.md).
+
+Esta edición está publicada para instalar, evaluar y contribuir. **La certificación SII/T46 continúa pendiente**; publicar el código no acredita autorización para emitir documentos tributarios en producción.
+
+- [Instalación y configuración](#desarrollo), [provisioning](docs/spec/TENANT_PROVISIONING.md) y [guía de integración](docs/integrations/GUIDE.md).
+- [Pruebas y evidencia](docs/spec/VALIDATION_REPORT.md), [SDD](docs/spec/SPEC_INDEX.md) y [pendientes](docs/spec/TASKS.md).
+- [Contribuir](CONTRIBUTING.md), [reportar vulnerabilidades](SECURITY.md), [cambios](CHANGELOG.md) y [versiones](https://github.com/angelo121514/cmorflow-tax-api/releases).
 
 **Estado: en desarrollo.** La certificación SII y las decisiones tributarias pendientes se registran en [DECISIONS.md](docs/spec/DECISIONS.md). Para trabajar en el proyecto, empieza por [CONTRIBUTING.md](CONTRIBUTING.md) y el [índice de especificaciones](docs/spec/SPEC_INDEX.md).
 
@@ -96,11 +106,17 @@ Ver `.env.example` para todas las variables. Las críticas:
 Requisitos: Node **22.12 o posterior dentro de la rama 22**, PostgreSQL **16** y **OpenSSL 3** (incluido en Docker; OPENSSL_BIN permite indicar el ejecutable local). `.nvmrc` declara Node 22. Copia `.env.example` a `.env`, genera secretos locales y usa `SII_INTEGRATION_MODE=mock`. La configuración carga `.env` por defecto; puedes cambiar el archivo mediante `SII_ENV_FILE`.
 
 ```bash
+git clone https://github.com/angelo121514/cmorflow-tax-api.git
+cd cmorflow-tax-api
 npm ci
+# Copia .env.example a .env y genera secretos locales propios.
+# PostgreSQL 16 debe estar disponible antes de aplicar las migraciones.
 npm run build
 npm run migration:run
 npm run start:dev # http://localhost:3000/api/docs
 ```
+
+Para generar cada secreto local puedes usar `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Usa valores distintos para SII_MASTER_KEY, INTEGRATION_URL_SECRET y CRON_HMAC_SECRET; guárdalos únicamente en tu archivo de entorno. Mantén SII_INTEGRATION_MODE=mock durante desarrollo.
 
 Para Docker Compose, copia `.env.example` a `.env.local`, genera secretos propios y ejecuta `docker compose up --build`. El conjunto inicia PostgreSQL, aplica las migraciones y levanta procesos separados de API y worker. El modo real exige material tributario y la configuración SII adecuada. El alta del tenant es una precondición; revisa [TENANT_PROVISIONING.md](docs/spec/TENANT_PROVISIONING.md).
 
@@ -160,7 +176,7 @@ Use `PUT /api/v1/configuration/branding` con una credencial `cmor_admin_*` que t
 
 ## Deploy en Render
 
-`render.yaml` define dos servicios Docker: `cmorflow-tax-api` (HTTP) y `cmorflow-tax-worker` (procesamiento). Ambos usan el mismo grupo secreto. El web ejecuta `node start-migrate.js` como pre-deploy; si la configuración o una migración falla, no abre el puerto. El contenedor incluye `libxml2-utils` para validar XSD.
+`render.yaml` define dos servicios Docker con despliegue manual (`autoDeployTrigger: off`): `cmorflow-tax-api` (HTTP) y `cmorflow-tax-worker` (procesamiento). Ambos usan el mismo grupo secreto. El web ejecuta `node start-migrate.js` como pre-deploy; si la configuración o una migración falla, no abre el puerto. El contenedor incluye `libxml2-utils` para validar XSD.
 
 En una instalación independiente, la migración inicial crea las tablas base; en una instalación compartida, revisa las tablas y el historial antes de aplicar migraciones. Si el servicio existente en Render no usa Docker, el cambio de runtime requiere recrearlo desde el Blueprint.
 
@@ -170,10 +186,18 @@ Extraído del ERP CmorFlow (`feat/b2b-integrations-api` sobre `staging`/`a808ad4
 
 ## Licencia
 
-Código abierto bajo [licencia MIT](LICENSE), Copyright (c) 2026 CmorFlow contributors. Los componentes de terceros conservan sus condiciones: [avisos](THIRD_PARTY_NOTICES.md).
+Código original bajo [licencia MIT](LICENSE), Copyright (c) 2026 CmorFlow contributors. MIT permite uso privado/comercial, copia, modificación, distribución, sublicencia y venta, siempre conservando el aviso de copyright y el texto de permiso en las copias o porciones sustanciales. El software se entrega «tal cual», sin garantía; consulta el texto completo en LICENSE.
+
+Los componentes de terceros conservan sus condiciones: [avisos](THIRD_PARTY_NOTICES.md). La licencia del código no proporciona certificados de clientes, CAF, secretos, bases de datos ni certificación SII. `private: true` evita publicar accidentalmente en npm; no limita los permisos MIT.
 
 ## Recursos y alta de una instalación independiente
 
 Los XSD SII y la CA de tu base se obtienen por el operador y se montan externamente: [esquemas](src/infrastructure/framework/sii/xsd/README.md), [TLS](certs/README.md). Configura ambos en API y worker antes de actualizar una instalación real; no desactives las verificaciones. La imagen incluye OpenSSL.
 
 El [provisioning](docs/spec/TENANT_PROVISIONING.md) ofrece `npm run tenant:provision -- --standalone perfil.json` para una base independiente. La certificación SII y el alta en una base compartida con ERP requieren sus responsables externos.
+
+## Publicación y operación
+
+La versión 1.0.0-oss.1 es una prerelease de código abierto en GitHub. API y worker requieren despliegue manual: una fusión de código no habilita emisión ni cambia por sí sola un servicio existente. Antes de desplegar aplica la migración, provee esquemas/CA y completa los gates tributarios y operativos de tu instalación. Ver [preparación de versiones](docs/maintainers/RELEASING.md) y [certificación/conciliación](docs/spec/SII_CERTIFICATION_CHECKLIST.md).
+
+El repositorio incluye `.env.example` y datos sintéticos de prueba. Mantén `.env`, PFX/CAF privados, credenciales y respaldos fuera de Git. `.git` es metadata de una copia de trabajo; node_modules/dist/coverage son artefactos locales y no forman parte del código versionado.

@@ -52,3 +52,7 @@ El checker valida presencia, enlaces locales y estructura de tareas, no semánti
 Pruebas nuevas usan repositorios/servicios y DB reales con caídas inyectadas como errores; no simulan SIGKILL de un proceso ni certifican el transporte SII. Se controlan preparación y transporte externos para aislar las garantías de persistencia. Hay evidencia de rollback, concurrencia de conexiones y recuperación de leases. El receptor webhook aún debe deduplicar entregas; no se promete exactly-once remoto.
 
 El commit siguiente sólo registra evidencia documental. CI sigue siendo obligatorio sobre la cabecera del PR antes de integrar. No se despliega ni se fusiona esta tarea. TASK-004 (staging/ERP) y TASK-005 (SII/T46) conservan responsables externos. El informe anterior de dependencia bloqueada queda como historia, superado por esta corrección.
+
+## Publicación GitHub 1.0.0-oss.1 — 2026-10-14
+
+Render confirmó autoDeploy=no / autoDeployTrigger=off antes de fusionar. Se conserva el despliegue dep-dacabn15efls73dmbdfg, commit 49bb9d80c1e4e7826dc4087a9e633886528b4673. Gitleaks 8.30.1 revisó el snapshot de publicación y los 21 commits disponibles antes del commit de publicación, sin detecciones y con reportes redactados. Sólo .env.example está versionado entre archivos de entorno; no hay PFX/P12/KEY/respaldos ni carpeta .git en el árbol. La versión pública y README se preparan en PR #2; CI final y SHA squash se registrarán en las notas de release verificadas. No se modifican otros servicios ni se solicita despliegue.

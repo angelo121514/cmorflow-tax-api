@@ -1,6 +1,6 @@
 {
   "name": "cmorflow-tax-api",
-  "version": "1.0.0",
+  "version": "1.0.0-oss.1",
   "description": "CmorFlow Tax API — plataforma tributaria B2B para facturación electrónica chilena vía API",
   "private": true,
   "license": "MIT",
