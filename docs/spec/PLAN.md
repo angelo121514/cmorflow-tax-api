@@ -15,3 +15,7 @@
 ## Definición de terminado
 
 Spec y ficha preceden código; referencias reales y diff cubierto; pruebas focales y CI en Node 22/PostgreSQL 16; contrato revisado; resultados y omisiones en [VALIDATION_REPORT](VALIDATION_REPORT.md). Mantenedor revisa semántica y compatibilidad. Rollback documental revierte el commit; no borra atribuciones ni pretende revocar permisos ya concedidos en copias MIT. No se despliega esta entrega.
+
+## Avance 2026-10-14
+
+TASK-001/002/003/006/007 completadas con evidencia CI en [VALIDATION_REPORT](VALIDATION_REPORT.md). TASK-004 implementa CLI independiente; staging y base ERP siguen externos. TASK-005 mantiene el gate SII. Las listas anteriores conservan la planificación original; [TASKS](TASKS.md) es la autoridad de estado vigente.

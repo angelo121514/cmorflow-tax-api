@@ -10,13 +10,13 @@ Se mantienen F-xx/BR-xx/D-xxx. D-006 sigue bloqueada; D-007 admite CLI sólo par
 
 ## Criterios de aceptación
 
-- [ ] Audit de producción sin avisos y sin apagar gates.
-- [ ] Caída tras reserva, documento o vínculo revierte todo y recupera sin otro folio confirmado.
-- [ ] Escrituras administrativas y recarga CAF preservan contador y rechazan solapamiento.
-- [ ] Fallo al guardar entrega revierte estado/evento; transición concurrente crea una sola notificación durable.
-- [ ] Firma nativa verificable, tamper rechazado y contraseña PFX incorrecta rechazada.
-- [ ] Recursos inciertos ausentes de distribución; procedimiento externo mantiene TLS/XSD.
-- [ ] Provisioning independiente validado y atómico; límites SII/ERP explícitos.
+- [x] Audit de producción sin avisos y sin apagar gates.
+- [x] Caída tras reserva, documento o vínculo revierte todo y recupera sin otro folio confirmado.
+- [x] Escrituras administrativas y recarga CAF preservan contador y rechazan solapamiento.
+- [x] Fallo al guardar entrega revierte estado/evento; transición concurrente crea una sola notificación durable.
+- [x] Firma nativa verificable, tamper rechazado y contraseña PFX incorrecta rechazada.
+- [x] Recursos inciertos ausentes de distribución; procedimiento externo mantiene TLS/XSD.
+- [x] Provisioning independiente validado y atómico; límites SII/ERP explícitos.
 
 ## Pruebas y trazabilidad
 

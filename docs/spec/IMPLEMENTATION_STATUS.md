@@ -22,3 +22,7 @@ CI 38484270148 aprobó 140 unitarios, 10 e2e PostgreSQL 16, checker, OpenAPI y D
 ## Corrección 2026-10-14
 
 Se implementan mutaciones frescas de CAF/config, preparación atómica y outbox sobre tablas existentes. El marcador de transmisión bloquea reenvíos ambiguos. Se elimina node-forge, actualizan dependencias y se configura obtención externa de recursos sin licencia documentada. Provisioning CLI está disponible sólo para base independiente. TASK-005 y la validación operativa staging siguen externas. El estado histórico anterior se conserva; resultados vigentes en [VALIDATION_REPORT](VALIDATION_REPORT.md).
+
+## Estado vigente tras CI 38598285603
+
+Correcciones de TASK-001/002/003/006/007 aprobadas: 141 unitarios, 18 e2e, Docker, SDD/OpenAPI y cero vulnerabilidades de producción. El bloqueo de dependencias de la entrega anterior está resuelto; persisten 20 moderate sólo en tooling de desarrollo. TASK-004 mantiene aprobación/ejecución staging y fuente ERP pendientes; TASK-005 continúa externa. Para actualizar un entorno real aplicar migración y proveer XSD/CA externos antes del worker. No se ha desplegado ni integrado el PR.

@@ -16,3 +16,7 @@ Flujo: integrador → HTTP/HMAC → solicitudes PostgreSQL → worker → firma/
 | Provisioning: tenant o perfil incorrecto                          | [Precondiciones](TENANT_PROVISIONING.md)                                                                                                                                                  | Sin procedimiento aprobado: TASK-004                                                   |
 
 Prioridad, responsables, dependencias y evidencia de cierre están en [TASKS](TASKS.md). Un control en fuente o un test aprobado no demuestra su eficacia en todos los ambientes.
+
+## Actualización comprobada 2026-10-14
+
+[CI 38598285603](VALIDATION_REPORT.md) valida correcciones locales de TASK-001/002/003: config fresca, preparación atómica y outbox. Un marcador durable bloquea retransmisión DTE ambigua y exige conciliación. Los riesgos de despliegue, custodia de secretos, certificación y recepción externa siguen aplicando. Se retiran recursos de redistribución incierta y node-forge; OpenSSL/Node crypto mantienen firma verificable.

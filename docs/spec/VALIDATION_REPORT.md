@@ -27,10 +27,28 @@ El checker valida presencia, enlaces locales y estructura de tareas, no semánti
 
 [PR #2](https://github.com/angelo121514/cmorflow-tax-api/pull/2), [CI 38484270148](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/38484270148) sobre 9c325fc: Node 22, checker, trazabilidad, 140 unitarios, 10 e2e PostgreSQL 16, OpenAPI y Docker aprobados. El job termina failure exclusivamente en Dependency security gate por los seis avisos registrados. No se integra ni despliega; se conserva la protección backend obligatoria. El commit posterior sólo actualiza esta evidencia y los criterios documentales; sus checks siguen siendo obligatorios antes de integrar.
 
-## Corrección 2026-10-14 — en validación
+## Corrección 2026-10-14 — validada en CI
 
 - npm audit --omit=dev --audit-level=moderate: cero vulnerabilidades de producción después de retirar node-forge y actualizar parches/override compatible js-yaml 5.4.3.
 - Audit completo: cero high/critical; persisten 20 avisos moderate en herramientas Jest/ts-jest de desarrollo. No se aplican downgrades incompatibles sugeridos automáticamente. Jest 30 y ts-jest 29.4.14 conservan compatibilidad documentada por sus peers.
-- Build y tests de firma nativa, transacciones y e2e se ejecutan sobre esta corrección; el resultado final se añadirá tras CI. Docker local no disponible en esta sesión.
+- Build y tests de firma nativa, transacciones y e2e aprobados en CI. Docker local no disponible en esta sesión; el build remoto aprobó.
 - Se retiran ocho XSD SII y CA Supabase de distribución actual, sin reescribir historial. Su instalación externa es requisito de actualización para entornos reales.
 - provisioning independiente implementado; no equivale a aprobación staging ni a certificación SII.
+
+### Resultado remoto de la corrección
+
+[CI 38598285603](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/38598285603) aprobó **6b6002f**, Node 22 y PostgreSQL 16:
+
+| Comprobación                       | Resultado                                                 |
+| ---------------------------------- | --------------------------------------------------------- |
+| Build                              | Aprobado                                                  |
+| Unitarios                          | 30 suites, 141 tests aprobados                            |
+| E2e                                | 5 suites, 18 tests aprobados, sin omisiones               |
+| SDD                                | 32 tests, 10 features, 17 filas y 5 fichas; diff aprobado |
+| OpenAPI                            | 27 paths sin drift                                        |
+| Docker                             | Build aprobado; incluye OpenSSL, licencia y avisos        |
+| Audit producción (umbral moderate) | Cero vulnerabilidades; gate aprobado                      |
+
+Pruebas nuevas usan repositorios/servicios y DB reales con caídas inyectadas como errores; no simulan SIGKILL de un proceso ni certifican el transporte SII. Se controlan preparación y transporte externos para aislar las garantías de persistencia. Hay evidencia de rollback, concurrencia de conexiones y recuperación de leases. El receptor webhook aún debe deduplicar entregas; no se promete exactly-once remoto.
+
+El commit siguiente sólo registra evidencia documental. CI sigue siendo obligatorio sobre la cabecera del PR antes de integrar. No se despliega ni se fusiona esta tarea. TASK-004 (staging/ERP) y TASK-005 (SII/T46) conservan responsables externos. El informe anterior de dependencia bloqueada queda como historia, superado por esta corrección.
