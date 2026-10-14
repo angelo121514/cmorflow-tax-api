@@ -26,3 +26,11 @@ El checker valida presencia, enlaces locales y estructura de tareas, no semánti
 ## Evidencia remota
 
 [PR #2](https://github.com/angelo121514/cmorflow-tax-api/pull/2), [CI 38484270148](https://github.com/angelo121514/cmorflow-tax-api/actions/runs/38484270148) sobre 9c325fc: Node 22, checker, trazabilidad, 140 unitarios, 10 e2e PostgreSQL 16, OpenAPI y Docker aprobados. El job termina failure exclusivamente en Dependency security gate por los seis avisos registrados. No se integra ni despliega; se conserva la protección backend obligatoria. El commit posterior sólo actualiza esta evidencia y los criterios documentales; sus checks siguen siendo obligatorios antes de integrar.
+
+## Corrección 2026-10-14 — en validación
+
+- npm audit --omit=dev --audit-level=moderate: cero vulnerabilidades de producción después de retirar node-forge y actualizar parches/override compatible js-yaml 5.4.3.
+- Audit completo: cero high/critical; persisten 20 avisos moderate en herramientas Jest/ts-jest de desarrollo. No se aplican downgrades incompatibles sugeridos automáticamente. Jest 30 y ts-jest 29.4.14 conservan compatibilidad documentada por sus peers.
+- Build y tests de firma nativa, transacciones y e2e se ejecutan sobre esta corrección; el resultado final se añadirá tras CI. Docker local no disponible en esta sesión.
+- Se retiran ocho XSD SII y CA Supabase de distribución actual, sin reescribir historial. Su instalación externa es requisito de actualización para entornos reales.
+- provisioning independiente implementado; no equivale a aprobación staging ni a certificación SII.

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as forge from 'node-forge';
+import { randomBytes } from 'node:crypto';
 import { DOMParser } from '@xmldom/xmldom';
 import { SignedXml } from 'xml-crypto';
 
@@ -70,7 +70,7 @@ export class SiiMockSoap {
       }
 
       // Generar token de sesión
-      const token = 'MOCK_SII_TOKEN_' + forge.util.bytesToHex(forge.random.getBytesSync(16)).toUpperCase();
+      const token = 'MOCK_SII_TOKEN_' + randomBytes(16).toString('hex').toUpperCase();
       this.logger.log('[MOCK SII SOAP] Firma de semilla validada; token temporal emitido.');
 
       const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
@@ -149,7 +149,7 @@ export class SiiMockSoap {
   /**
    * Validador criptográfico genérico para firmas XMLDSig.
    * Extrae la clave pública RSA (Modulus/Exponent) del XML, canonicaliza el bloque
-   * <SignedInfo> y valida la firma (<SignatureValue>) usando node-forge.
+   * <SignedInfo> y valida la firma (<SignatureValue>) usando crypto nativo.
    */
   private verifyXmlSignature(xml: string, targetId: string): boolean {
     try {

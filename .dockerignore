@@ -23,3 +23,7 @@ coverage
 tsconfig.tsbuildinfo
 docs
 test
+
+certs/*.crt
+src/infrastructure/framework/sii/xsd/*.xsd
+!src/infrastructure/framework/sii/xsd/xmldsignature_v10.xsd

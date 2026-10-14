@@ -49,7 +49,7 @@ Un servicio NestJS autónomo que expone el motor tributario de CmorFlow (emisió
 
 ### Reutilización del documento en reintentos
 
-El `dteId` se persiste tras un `prepare` exitoso. Los reintentos de solicitudes que ya tienen ese vínculo reutilizan el documento. La recuperación ante una caída entre reserva y persistencia del vínculo sigue siendo un escenario a verificar; consulta [TESTING.md](docs/spec/TESTING.md).
+El `dteId` se persiste tras un `prepare` exitoso. La reserva, el documento y su vínculo se confirman en una transacción. Los reintentos reutilizan el documento; si un envío externo quedó ambiguo, se exige conciliación y se bloquea la retransmisión automática. Consulta el [procedimiento](docs/spec/SII_CERTIFICATION_CHECKLIST.md).
 
 ## Endpoints principales
 
@@ -93,7 +93,7 @@ Ver `.env.example` para todas las variables. Las críticas:
 
 ## Desarrollo
 
-Requisitos: Node **22.12 o posterior dentro de la rama 22** y PostgreSQL **16**. `.nvmrc` declara Node 22. Copia `.env.example` a `.env`, genera secretos locales y usa `SII_INTEGRATION_MODE=mock`. La configuración carga `.env` por defecto; puedes cambiar el archivo mediante `SII_ENV_FILE`.
+Requisitos: Node **22.12 o posterior dentro de la rama 22**, PostgreSQL **16** y **OpenSSL 3** (incluido en Docker; OPENSSL_BIN permite indicar el ejecutable local). `.nvmrc` declara Node 22. Copia `.env.example` a `.env`, genera secretos locales y usa `SII_INTEGRATION_MODE=mock`. La configuración carga `.env` por defecto; puedes cambiar el archivo mediante `SII_ENV_FILE`.
 
 ```bash
 npm ci
@@ -171,3 +171,9 @@ Extraído del ERP CmorFlow (`feat/b2b-integrations-api` sobre `staging`/`a808ad4
 ## Licencia
 
 Código abierto bajo [licencia MIT](LICENSE), Copyright (c) 2026 CmorFlow contributors. Los componentes de terceros conservan sus condiciones: [avisos](THIRD_PARTY_NOTICES.md).
+
+## Recursos y alta de una instalación independiente
+
+Los XSD SII y la CA de tu base se obtienen por el operador y se montan externamente: [esquemas](src/infrastructure/framework/sii/xsd/README.md), [TLS](certs/README.md). Configura ambos en API y worker antes de actualizar una instalación real; no desactives las verificaciones. La imagen incluye OpenSSL.
+
+El [provisioning](docs/spec/TENANT_PROVISIONING.md) ofrece `npm run tenant:provision -- --standalone perfil.json` para una base independiente. La certificación SII y el alta en una base compartida con ERP requieren sus responsables externos.

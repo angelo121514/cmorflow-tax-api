@@ -1,15 +1,21 @@
+import { DataSource } from "typeorm";
+import { tenantTransaction } from "../../infrastructure/framework/postgres/tenant-transaction";
+import { IntegrationRequestEntity as RequestRow } from "../../infrastructure/framework/postgres/entities/integration-request.entity";
 // backend/src/application/integrations/integration-processor.service.ts
-import { Injectable, Logger } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
-import { ClsService } from 'nestjs-cls';
-import { IDataServices, IntegrationRequestEntity } from '@domain';
-import { EmitDteUseCase } from '../dte/emit-dte.use-case';
-import { QueryDteStatusUseCase } from '../dte/query-dte-status.use-case';
-import { IntegrationStateService, mapDteStatusToPublic } from './integration-state.service';
-import { IntegrationQueueClaimer } from './integration-queue.claimer';
-import { IntegrationErrorCode } from './integration-errors';
-import { IntegrationApiException } from './integration-api.exception';
-import { GenerateRcofUseCase } from './generate-rcof.use-case';
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { firstValueFrom } from "rxjs";
+import { ClsService } from "nestjs-cls";
+import { IDataServices, IntegrationRequestEntity } from "@domain";
+import { EmitDteUseCase } from "../dte/emit-dte.use-case";
+import { QueryDteStatusUseCase } from "../dte/query-dte-status.use-case";
+import {
+  IntegrationStateService,
+  mapDteStatusToPublic,
+} from "./integration-state.service";
+import { IntegrationQueueClaimer } from "./integration-queue.claimer";
+import { IntegrationErrorCode } from "./integration-errors";
+import { IntegrationApiException } from "./integration-api.exception";
+import { GenerateRcofUseCase } from "./generate-rcof.use-case";
 
 /** Tamaño de lote por tick del reconciler. */
 const BATCH_SIZE = 5;
@@ -37,10 +43,13 @@ export class IntegrationProcessorService {
     private readonly emitDteUseCase: EmitDteUseCase,
     private readonly queryDteStatusUseCase: QueryDteStatusUseCase,
     private readonly generateRcofUseCase: GenerateRcofUseCase,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
 
   /** Reclama y procesa solicitudes vencidas. Disparado post-202 y por cron. */
-  async processDue(limit: number = BATCH_SIZE): Promise<{ claimed: number; results: any[] }> {
+  async processDue(
+    limit: number = BATCH_SIZE,
+  ): Promise<{ claimed: number; results: any[] }> {
     const due = await this.claimer.claimDue(limit);
     const results: any[] = [];
     for (const request of due) {
@@ -48,23 +57,27 @@ export class IntegrationProcessorService {
         const result = await this.processInTenantContext(request);
         results.push({ id: request.id, ...result });
       } catch (err) {
-        this.logger.error(`Error procesando solicitud ${request.id}: ${(err as Error).message}`);
+        this.logger.error(
+          `Error procesando solicitud ${request.id}: ${(err as Error).message}`,
+        );
         results.push({ id: request.id, error: (err as Error).message });
       }
     }
     return { claimed: due.length, results };
   }
 
-  private async processInTenantContext(request: IntegrationRequestEntity): Promise<any> {
+  private async processInTenantContext(
+    request: IntegrationRequestEntity,
+  ): Promise<any> {
     return this.cls.run({} as any, async () => {
-      this.cls.set('tenantId', request.tenantId);
+      this.cls.set("tenantId", request.tenantId);
       return this.process(request);
     });
   }
 
   private async process(request: IntegrationRequestEntity): Promise<any> {
     // kind=rcof: consolidar, firmar, persistir y transmitir vía el use case.
-    if (request.kind === 'rcof') {
+    if (request.kind === "rcof") {
       return this.processRcof(request);
     }
 
@@ -72,7 +85,7 @@ export class IntegrationProcessorService {
       this.dataServices.integrationRequest.get(request.id!),
     );
     if (!fresh) {
-      return { skipped: 'request vanished' };
+      return { skipped: "request vanished" };
     }
 
     // El DTE ya existe (reintento): sólo retransmitir o consolidar estado.
@@ -83,14 +96,47 @@ export class IntegrationProcessorService {
     // Primera pasada: preparar (reserva folio UNA vez) y persistir dteId
     // antes de cualquier transmisión.
     try {
-      const emitDto = this.rebuildEmitDto(fresh);
+      const prepareAndLink = async () => {
+        const request = await firstValueFrom(
+          this.dataServices.integrationRequest.get(fresh.id!),
+        );
+        if (!request) throw new Error("Solicitud no encontrada al preparar.");
+        if (request.dteId) return request;
+        const dte = await firstValueFrom(
+          this.emitDteUseCase.prepare(
+            this.rebuildEmitDto(request),
+            request.tenantId,
+          ),
+        );
+        return (await firstValueFrom(
+          this.dataServices.integrationRequest.update(request.id!, {
+            dteId: dte.id,
+          } as any),
+        ))!;
+      };
+      const withDte =
+        this.dataSource?.options?.type === "postgres"
+          ? await tenantTransaction(
+              this.dataSource.manager,
+              fresh.tenantId,
+              async (manager) => {
+                await manager
+                  .getRepository(RequestRow)
+                  .findOneOrFail({
+                    where: { id: fresh.id, tenantId: fresh.tenantId },
+                    lock: { mode: "pessimistic_write" },
+                  });
+                return prepareAndLink();
+              },
+            )
+          : await prepareAndLink();
       const dte = await firstValueFrom(
-        this.emitDteUseCase.prepare(emitDto, fresh.tenantId),
+        this.dataServices.dteDocument.get(withDte.dteId!),
       );
-      const withDte = await firstValueFrom(
-        this.dataServices.integrationRequest.update(fresh.id!, { dteId: dte.id } as any),
+      if (!dte) throw new Error("DTE preparado no encontrado.");
+      this.logger.log(
+        `Solicitud ${fresh.id}: DTE ${dte.id} (folio ${dte.folio}) reservado y firmado`,
       );
-      this.logger.log(`Solicitud ${fresh.id}: DTE ${dte.id} (folio ${dte.folio}) reservado y firmado`);
       return this.transmit(withDte!, dte.id!);
     } catch (err) {
       return this.handleProcessingError(fresh, err);
@@ -105,16 +151,22 @@ export class IntegrationProcessorService {
         sequenceNumber: fresh.payload?.sequenceNumber,
       });
       const withRcof = await firstValueFrom(
-        this.dataServices.integrationRequest.update(fresh.id!, { rcofId: rcof.id } as any),
+        this.dataServices.integrationRequest.update(fresh.id!, {
+          rcofId: rcof.id,
+        } as any),
       );
-      if (!rcof.trackId) return this.handleProcessingError(fresh, new Error('RCOF sin TrackID tras la transmisión.'));
+      if (!rcof.trackId)
+        return this.handleProcessingError(
+          fresh,
+          new Error("RCOF sin TrackID tras la transmisión."),
+        );
       const submitted = await this.stateService.applyState(
         withRcof!,
-        'submitted',
+        "submitted",
         `RCOF generado y transmitido. TrackID: ${rcof.trackId}`,
         { trackId: rcof.trackId },
       );
-      if (['accepted', 'observed', 'rejected'].includes(rcof.status)) {
+      if (["accepted", "observed", "rejected"].includes(rcof.status)) {
         return this.stateService.applyState(
           submitted,
           rcof.status as any,
@@ -125,43 +177,132 @@ export class IntegrationProcessorService {
     } catch (err) {
       if (err instanceof IntegrationApiException && err.getStatus() === 422) {
         // Fallo de validación definitivo (p. ej. sin boletas ese día).
-        return this.stateService.applyState(fresh, 'failed', (err as Error).message);
+        return this.stateService.applyState(
+          fresh,
+          "failed",
+          (err as Error).message,
+        );
       }
       return this.handleProcessingError(fresh, err);
     }
   }
 
   /** Reintento con documento existente: consolidar estado o retransmitir. */
-  private async transmitOrFinalize(fresh: IntegrationRequestEntity): Promise<any> {
-    const dte = await firstValueFrom(this.dataServices.dteDocument.get(fresh.dteId!));
+  private async transmitOrFinalize(
+    fresh: IntegrationRequestEntity,
+  ): Promise<any> {
+    const dte = await firstValueFrom(
+      this.dataServices.dteDocument.get(fresh.dteId!),
+    );
     if (!dte) {
-      return this.handleProcessingError(fresh, new Error('DTE referenciado no existe'));
+      return this.handleProcessingError(
+        fresh,
+        new Error("DTE referenciado no existe"),
+      );
     }
     const mapped = mapDteStatusToPublic(dte.status);
-    if (mapped && ['accepted', 'observed', 'rejected', 'cancelled'].includes(mapped)) {
+    if (
+      mapped &&
+      ["accepted", "observed", "rejected", "cancelled"].includes(mapped)
+    ) {
       // El polling ya resolvió el ciclo; consolidar estado público.
-      const submitted = fresh.state === 'processing'
-        ? await this.stateService.applyState(fresh, 'submitted', `DTE ya transmitido. TrackID: ${dte.trackId ?? 'n/a'}`)
-        : fresh;
-      return this.stateService.applyState(submitted, mapped as any, `Estado SII: ${dte.status}`);
+      const submitted =
+        fresh.state === "processing"
+          ? await this.stateService.applyState(
+              fresh,
+              "submitted",
+              `DTE ya transmitido. TrackID: ${dte.trackId ?? "n/a"}`,
+            )
+          : fresh;
+      return this.stateService.applyState(
+        submitted,
+        mapped as any,
+        `Estado SII: ${dte.status}`,
+      );
+    }
+    if (dte.trackId) {
+      return this.stateService.applyState(
+        fresh,
+        "submitted",
+        `TrackID recuperado: ${dte.trackId}`,
+        { trackId: dte.trackId },
+      );
     }
     return this.transmit(fresh, dte.id!);
   }
 
-  private async transmit(fresh: IntegrationRequestEntity, dteId: string): Promise<any> {
+  private async transmit(
+    fresh: IntegrationRequestEntity,
+    dteId: string,
+  ): Promise<any> {
+    if (fresh.transmissionStartedAt) return this.quarantineTransmission(fresh);
+    const markAttempt = async () => {
+      const latest = await firstValueFrom(
+        this.dataServices.integrationRequest.get(fresh.id!),
+      );
+      if (!latest || latest.transmissionStartedAt) return false;
+      fresh.transmissionStartedAt = new Date();
+      await firstValueFrom(
+        this.dataServices.integrationRequest.update(fresh.id!, {
+          transmissionStartedAt: fresh.transmissionStartedAt,
+        } as any),
+      );
+      return true;
+    };
+    const marked =
+      this.dataSource?.options?.type === "postgres"
+        ? await tenantTransaction(
+            this.dataSource.manager,
+            fresh.tenantId,
+            async (manager) => {
+              await manager
+                .getRepository(RequestRow)
+                .findOneOrFail({
+                  where: { id: fresh.id, tenantId: fresh.tenantId },
+                  lock: { mode: "pessimistic_write" },
+                });
+              return markAttempt();
+            },
+          )
+        : await markAttempt();
+    if (!marked) return this.quarantineTransmission(fresh);
     try {
       const result = await firstValueFrom(
-        this.emitDteUseCase.transmit(dteId, fresh.tenantId, undefined, undefined, undefined, undefined, fresh.originCredentialId ?? undefined),
+        this.emitDteUseCase.transmit(
+          dteId,
+          fresh.tenantId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          fresh.originCredentialId ?? undefined,
+        ),
       );
       return this.stateService.applyState(
         fresh,
-        'submitted',
-        `Transmitido al SII. TrackID: ${result?.trackId ?? 'n/a'}`,
+        "submitted",
+        `Transmitido al SII. TrackID: ${result?.trackId ?? "n/a"}`,
         { trackId: result?.trackId ?? null },
       );
     } catch (err) {
-      return this.handleProcessingError(fresh, err);
+      return this.quarantineTransmission(fresh);
     }
+  }
+
+  private async quarantineTransmission(
+    fresh: IntegrationRequestEntity,
+  ): Promise<any> {
+    fresh.lastError = {
+      code: IntegrationErrorCode.SII_UNAVAILABLE,
+      message:
+        "Resultado de envío ambiguo; conciliar con SII antes de reintentar.",
+      retryable: false,
+    };
+    return this.stateService.applyState(
+      fresh,
+      "failed",
+      fresh.lastError.message,
+    );
   }
 
   /**
@@ -169,13 +310,20 @@ export class IntegrationProcessorService {
    * recuperables (backoff). Los rechazos tributarios definitivos llegan por
    * el estado SII (pollSubmitted), no por la transmisión.
    */
-  private async handleProcessingError(fresh: IntegrationRequestEntity, err: any): Promise<any> {
+  private async handleProcessingError(
+    fresh: IntegrationRequestEntity,
+    err: any,
+  ): Promise<any> {
     const message = err instanceof Error ? err.message : String(err);
     const isFolioIssue = /caf|folio/i.test(message);
     const code = isFolioIssue
       ? IntegrationErrorCode.FOLIO_EXHAUSTED
       : IntegrationErrorCode.SII_UNAVAILABLE;
-    return this.stateService.scheduleRetry(fresh, { code, message, retryable: true });
+    return this.stateService.scheduleRetry(fresh, {
+      code,
+      message,
+      retryable: true,
+    });
   }
 
   /**
@@ -183,37 +331,52 @@ export class IntegrationProcessorService {
    * TrackID (QueryDteStatusUseCase actualiza el DTE) y consolida el estado
    * público (accepted/observed/rejected). Fuente de los webhooks finales.
    */
-  async pollSubmitted(limit: number = BATCH_SIZE * 4): Promise<{ polled: number; finalized: number }> {
+  async pollSubmitted(
+    limit: number = BATCH_SIZE * 4,
+  ): Promise<{ polled: number; finalized: number }> {
     let finalized = 0;
-    const tenants = await this.requestsByTenant(limit, false, ['submitted', 'observed']);
+    const tenants = await this.requestsByTenant(limit, false, [
+      "submitted",
+      "observed",
+    ]);
 
     let polled = 0;
     for (const [tenantId, requests] of tenants) {
       for (const request of requests) {
         polled++;
-        if (request.kind === 'rcof') {
+        if (request.kind === "rcof") {
           // El RCOF consulta su propio TrackID desde su procesador (M4).
           continue;
         }
         await this.cls.run({} as any, async () => {
-          this.cls.set('tenantId', tenantId);
+          this.cls.set("tenantId", tenantId);
           try {
-            const dte = await firstValueFrom(this.dataServices.dteDocument.get(request.dteId!));
+            const dte = await firstValueFrom(
+              this.dataServices.dteDocument.get(request.dteId!),
+            );
             if (!dte?.trackId) {
               return;
             }
             // Refresca el DTE contra el SII (mock en desarrollo/staging mock).
-            await firstValueFrom(this.queryDteStatusUseCase.execute(dte.trackId, tenantId));
-            const refreshed = await firstValueFrom(this.dataServices.dteDocument.get(dte.id!));
+            await firstValueFrom(
+              this.queryDteStatusUseCase.execute(dte.trackId, tenantId),
+            );
+            const refreshed = await firstValueFrom(
+              this.dataServices.dteDocument.get(dte.id!),
+            );
             const mapped = mapDteStatusToPublic(refreshed?.status);
-            if (mapped && ['accepted', 'observed', 'rejected', 'cancelled'].includes(mapped)) {
+            if (
+              mapped &&
+              ["accepted", "observed", "rejected", "cancelled"].includes(mapped)
+            ) {
               const changed = request.state !== mapped;
               await this.stateService.applyState(
                 request,
                 mapped as any,
                 `SII responde ${refreshed!.status} para TrackID ${dte.trackId}`,
               );
-              if (changed && ['accepted', 'rejected'].includes(mapped)) finalized++;
+              if (changed && ["accepted", "rejected"].includes(mapped))
+                finalized++;
             }
           } catch (err) {
             this.logger.warn(
@@ -227,16 +390,21 @@ export class IntegrationProcessorService {
   }
 
   /** Polling de solicitudes RCOF `submitted`: consulta TrackID y finaliza. */
-  async pollRcofSubmitted(limit = 10): Promise<{ polled: number; finalized: number }> {
+  async pollRcofSubmitted(
+    limit = 10,
+  ): Promise<{ polled: number; finalized: number }> {
     let polled = 0;
     let finalized = 0;
-    const requestsByTenant = await this.requestsByTenant(limit, true, ['submitted', 'observed']);
+    const requestsByTenant = await this.requestsByTenant(limit, true, [
+      "submitted",
+      "observed",
+    ]);
 
     for (const [tenantId, requests] of requestsByTenant) {
       for (const request of requests) {
         polled++;
         await this.cls.run({} as any, async () => {
-          this.cls.set('tenantId', tenantId);
+          this.cls.set("tenantId", tenantId);
           try {
             const rcof = await firstValueFrom(
               this.dataServices.rcofSubmission.get(request.rcofId!),
@@ -246,23 +414,26 @@ export class IntegrationProcessorService {
             }
             // El resultado puede estar guardado aunque una caída impidiera
             // consolidar la request. Recuperarlo sin volver a enviar al SII.
-            const updated = ['accepted', 'rejected'].includes(rcof.status)
+            const updated = ["accepted", "rejected"].includes(rcof.status)
               ? rcof
-              : ['submitted', 'observed'].includes(rcof.status)
+              : ["submitted", "observed"].includes(rcof.status)
                 ? await this.generateRcofUseCase.pollStatus(tenantId, rcof)
                 : null;
             if (!updated) return;
-            if (['accepted', 'observed', 'rejected'].includes(updated.status)) {
+            if (["accepted", "observed", "rejected"].includes(updated.status)) {
               const changed = request.state !== updated.status;
               await this.stateService.applyState(
                 request,
                 updated.status as any,
                 `SII responde ${updated.status} para RCOF ${rcof.periodDate}/${rcof.sequence}`,
               );
-              if (changed && ['accepted', 'rejected'].includes(updated.status)) finalized++;
+              if (changed && ["accepted", "rejected"].includes(updated.status))
+                finalized++;
             }
           } catch (err) {
-            this.logger.warn(`Poll de RCOF ${request.id} falló: ${(err as Error).message}`);
+            this.logger.warn(
+              `Poll de RCOF ${request.id} falló: ${(err as Error).message}`,
+            );
           }
         });
       }
@@ -273,7 +444,7 @@ export class IntegrationProcessorService {
   private async requestsByTenant(
     limit: number,
     rcofOnly: boolean,
-    states: Array<'submitted' | 'observed'>,
+    states: Array<"submitted" | "observed">,
   ): Promise<Map<string, IntegrationRequestEntity[]>> {
     const grouped = new Map<string, IntegrationRequestEntity[]>();
     const tenants = this.dataServices.tenant?.getAll
@@ -285,18 +456,22 @@ export class IntegrationProcessorService {
         this.dataServices.integrationRequest.find({ where: {} } as any),
       );
       for (const request of requests) {
-        if (states.includes(request.state as any)) this.addRequest(grouped, request, limit, rcofOnly);
+        if (states.includes(request.state as any))
+          this.addRequest(grouped, request, limit, rcofOnly);
       }
       return grouped;
     }
     for (const tenant of tenants) {
       await this.cls.run({} as any, async () => {
-        this.cls.set('tenantId', tenant.id!);
+        this.cls.set("tenantId", tenant.id!);
         for (const state of states) {
           const requests = await firstValueFrom(
-            this.dataServices.integrationRequest.find({ where: { state } } as any),
+            this.dataServices.integrationRequest.find({
+              where: { state },
+            } as any),
           );
-          for (const request of requests) this.addRequest(grouped, request, limit, rcofOnly);
+          for (const request of requests)
+            this.addRequest(grouped, request, limit, rcofOnly);
         }
       });
     }
@@ -304,11 +479,13 @@ export class IntegrationProcessorService {
   }
 
   private addRequest(
-    grouped: Map<string, IntegrationRequestEntity[]>, request: IntegrationRequestEntity,
-    limit: number, rcofOnly: boolean,
+    grouped: Map<string, IntegrationRequestEntity[]>,
+    request: IntegrationRequestEntity,
+    limit: number,
+    rcofOnly: boolean,
   ): void {
-    if (rcofOnly && (request.kind !== 'rcof' || !request.rcofId)) return;
-    if (!rcofOnly && request.kind === 'rcof') return;
+    if (rcofOnly && (request.kind !== "rcof" || !request.rcofId)) return;
+    if (!rcofOnly && request.kind === "rcof") return;
     const list = grouped.get(request.tenantId) || [];
     if (list.length < limit) {
       list.push(request);
@@ -345,5 +522,4 @@ export class IntegrationProcessorService {
       globalDiscountPercentage: payload.globalDiscountPercentage,
     };
   }
-
 }

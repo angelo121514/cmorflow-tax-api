@@ -1,4 +1,13 @@
-import * as forge from 'node-forge';
+import {
+  X509Certificate,
+  createPrivateKey,
+  createPublicKey,
+  randomBytes,
+} from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface GeneratedCertificate {
   pfxBase64: string;
@@ -6,7 +15,6 @@ export interface GeneratedCertificate {
   certificatePem: string;
   privateKeyPem: string;
 }
-
 export interface PfxMetadata {
   subjectName: string;
   validTo: string;
@@ -15,161 +23,171 @@ export interface PfxMetadata {
   representativeRut?: string;
 }
 
+/** OpenSSL parses PKCS12; signing and verification use Node crypto/xml-crypto.
+ * Passwords are passed via child environment, never argv or a shell. */
 export class CertificateUtils {
-  /**
-   * Parsea un archivo PFX (PKCS12) en base64 y extrae metadatos reales.
-   */
-  public static extractMetadata(pfxBase64: string, password: string): PfxMetadata {
-    if (!password || password.trim() === '') {
-      throw new Error('La contraseña del certificado PFX es obligatoria para extraer metadatos.');
-    }
+  private static openssl(
+    args: string[],
+    password: string,
+    input?: Buffer,
+  ): Buffer {
+    const gitOpenSsl = "C:/Program Files/Git/usr/bin/openssl.exe";
+    const executable =
+      process.env.OPENSSL_BIN ||
+      (process.platform === "win32" && existsSync(gitOpenSsl)
+        ? gitOpenSsl
+        : "openssl");
     try {
-      const p12Der = forge.util.decode64(pfxBase64);
-      const p12Asn1 = forge.asn1.fromDer(p12Der);
-      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
-
-      // Obtener certificado X.509
-      const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
-      const certBag = certBags[forge.pki.oids.certBag]?.[0];
-      if (!certBag || !certBag.cert) {
-        throw new Error('No se encontró un certificado X.509 válido en el archivo P12/PFX.');
-      }
-      const cert = certBag.cert;
-
-      // Calcular huella (fingerprint) SHA-1 de los bytes DER del certificado
-      const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
-      const md = forge.md.sha1.create();
-      md.update(certDer);
-      const fingerprint = md.digest().toHex().toUpperCase();
-
-      // Obtener el Common Name (CN)
-      const getCommonName = (attrs: any[]) => {
-        const attr = attrs.find((a) => a.name === 'commonName' || a.type === forge.pki.oids.commonName);
-        return attr ? String(attr.value) : 'Desconocido';
-      };
-
-      const subjectName = getCommonName(cert.subject.attributes);
-      const issuerName = getCommonName(cert.issuer.attributes);
-      
-      // Fecha de expiración en formato YYYY-MM-DD
-      const validToDate = cert.validity.notAfter;
-      const validTo = validToDate.toISOString().split('T')[0];
-
-      // Intentar extraer el RUT del representante desde el commonName o serialNumber del subject
-      let representativeRut: string | undefined;
-      const serialAttr = cert.subject.attributes.find(
-        (a) => a.name === 'serialName' || a.name === 'serialNumber' || a.name === 'dnQualifier',
+      return execFileSync(executable, args, {
+        input,
+        env: { ...process.env, CMOR_PFX_PASSWORD: password },
+        windowsHide: true,
+        timeout: 30000,
+        maxBuffer: 8 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch {
+      // Never expose child output or key material in errors/logs.
+      throw new Error(
+        "OpenSSL no pudo procesar el certificado. Verifica instalación, formato y contraseña.",
       );
-      
-      if (serialAttr && typeof serialAttr.value === 'string') {
-        representativeRut = serialAttr.value.replace(/[^0-9kK-]/g, '');
-      } else {
-        // Buscar un patrón de RUT chileno en el subjectName (ej. "Nombre Apellido 12345678-9")
-        const rutMatch = /\b(\d{1,2}(?:\.?\d{3}){2}-?[0-9kK])\b/.exec(subjectName);
-        if (rutMatch) {
-          representativeRut = rutMatch[1].replace(/\./g, ''); // Sin puntos
-        }
-      }
-
-      return {
-        subjectName,
-        validTo,
-        issuerName,
-        fingerprint,
-        representativeRut,
-      };
-    } catch (error) {
-      throw new Error(`Error al parsear o extraer metadatos del PFX: ${error.message}`);
     }
   }
-  /**
-   * Genera un certificado digital de pruebas auto-firmado con la estructura X.509
-   * exacta exigida para la representación tributaria ante el SII en Chile.
-   */
+
+  public static extractKeyPair(
+    pfxBase64: string,
+    password: string,
+  ): { privateKeyPem: string; certificatePem: string } {
+    if (!password?.trim())
+      throw new Error("La contraseña del certificado PFX es obligatoria.");
+    if (
+      !/^[A-Za-z0-9+/=\s]+$/.test(pfxBase64) ||
+      pfxBase64.length > 8 * 1024 * 1024
+    )
+      throw new Error("PFX base64 inválido o demasiado grande.");
+    const input = Buffer.from(pfxBase64, "base64");
+    let pem: string;
+    try {
+      pem = this.openssl(
+        ["pkcs12", "-nodes", "-passin", "env:CMOR_PFX_PASSWORD"],
+        password,
+        input,
+      ).toString();
+    } catch {
+      // Older issuer bundles may use RC2/3DES; OpenSSL 3 legacy provider is
+      // restricted to parsing the local bundle, not TLS or XML verification.
+      pem = this.openssl(
+        ["pkcs12", "-legacy", "-nodes", "-passin", "env:CMOR_PFX_PASSWORD"],
+        password,
+        input,
+      ).toString();
+    }
+    const privateKeyPem = pem.match(
+      /-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----/,
+    )?.[0];
+    if (!privateKeyPem) throw new Error("PFX sin llave privada.");
+    const key = createPrivateKey(privateKeyPem);
+    if (key.asymmetricKeyType !== "rsa")
+      throw new Error("El certificado DTE debe usar RSA.");
+    const publicDer = createPublicKey(key).export({
+      type: "spki",
+      format: "der",
+    });
+    const certificates =
+      pem.match(
+        /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+      ) || [];
+    const certificatePem = certificates.find((candidate) =>
+      new X509Certificate(candidate).publicKey
+        .export({ type: "spki", format: "der" })
+        .equals(publicDer),
+    );
+    if (!certificatePem)
+      throw new Error(
+        "PFX sin certificado correspondiente a la llave privada.",
+      );
+    return { privateKeyPem, certificatePem };
+  }
+
+  public static extractMetadata(
+    pfxBase64: string,
+    password: string,
+  ): PfxMetadata {
+    const { certificatePem } = this.extractKeyPair(pfxBase64, password);
+    const cert = new X509Certificate(certificatePem);
+    const cn = (dn: string) => /^CN=(.*)$/m.exec(dn)?.[1] || "Desconocido";
+    const subjectName = cn(cert.subject);
+    const serial = /^(?:serialNumber|dnQualifier)=(.*)$/im.exec(
+      cert.subject,
+    )?.[1];
+    const representativeRut =
+      serial?.replace(/[^0-9kK-]/g, "") ||
+      /\b(\d{1,2}(?:\.?\d{3}){2}-?[0-9kK])\b/
+        .exec(subjectName)?.[1]
+        .replace(/\./g, "");
+    return {
+      subjectName,
+      issuerName: cn(cert.issuer),
+      validTo: new Date(cert.validTo).toISOString().slice(0, 10),
+      fingerprint: cert.fingerprint.replace(/:/g, ""),
+      representativeRut,
+    };
+  }
+
   public static generateMockChileanCertificate(
     rut: string,
     businessName: string,
     repRut: string,
     repName: string,
-    password?: string
+    password?: string,
   ): GeneratedCertificate {
-    // Si no se provee password, generar uno aleatorio de 16 chars (no usar default hardcoded)
-    const finalPassword = password || forge.util.bytesToHex(forge.random.getBytesSync(8));
-    const pki = forge.pki;
-
-    // 1. Generar par de llaves RSA de 2048 bits
-    const keys = pki.rsa.generateKeyPair(2048);
-
-    // 2. Crear certificado X.509
-    const cert = pki.createCertificate();
-    cert.publicKey = keys.publicKey;
-    cert.serialNumber = Math.floor(Math.random() * 1000000).toString();
-    
-    // Validez de 1 año
-    cert.validity.notBefore = new Date();
-    cert.validity.notAfter = new Date();
-    cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-
-    // Atributos del Subject conforme a los emitidos por Acepta/E-Sign en Chile
-    const attrs = [
-      { name: 'countryName', value: 'CL' },
-      { name: 'organizationName', value: businessName },
-      { name: 'organizationalUnitName', value: 'Representacion Tributaria' },
-      { name: 'commonName', value: `${repName} ${repRut}` },
-      { name: 'emailAddress', value: `${repName.toLowerCase().replace(/\s+/g, '.')}@${businessName.toLowerCase().replace(/[\s\.]+/g, '')}.cl` }
-    ];
-
-    cert.setSubject(attrs);
-    cert.setIssuer(attrs); // Auto-firmado
-
-    // 3. Extensiones X.509 estándar para firmas DTE chilenas (Firma Digital, No repudio, Cifrado de Claves)
-    cert.setExtensions([
-      {
-        name: 'basicConstraints',
-        cA: false
-      },
-      {
-        name: 'keyUsage',
-        digitalSignature: true,
-        nonRepudiation: true,
-        keyEncipherment: true,
-        dataEncipherment: true
-      },
-      {
-        name: 'extKeyUsage',
-        serverAuth: false,
-        clientAuth: true,
-        codeSigning: false,
-        emailProtection: true,
-        timeStamping: false
-      },
-      {
-        name: 'subjectKeyIdentifier'
-      }
-    ]);
-
-    // 4. Firmar el certificado usando la llave privada
-    cert.sign(keys.privateKey, forge.md.sha1.create());
-
-    // 5. Empaquetar como archivo PKCS12 (PFX/P12) compatible con navegadores y librerías
-    const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
-      keys.privateKey,
-      [cert],
-      finalPassword,
-      { algorithm: '3des' }
-    );
-
-    const p12Der = forge.asn1.toDer(p12Asn1).getBytes();
-    const pfxBase64 = forge.util.encode64(p12Der);
-
-    const certificatePem = pki.certificateToPem(cert);
-    const privateKeyPem = pki.privateKeyToPem(keys.privateKey);
-
-    return {
-      pfxBase64,
-      password: finalPassword,
-      certificatePem,
-      privateKeyPem
-    };
+    const finalPassword = password || randomBytes(16).toString("hex");
+    const dir = mkdtempSync(join(tmpdir(), "cmor-mock-pfx-"));
+    try {
+      // Escape DN delimiters; this is an argv value, never shell input.
+      const escape = (value: string) => value.replace(/[\\/+=\r\n]/g, "_");
+      const keyPath = join(dir, "key.pem"),
+        certPath = join(dir, "cert.pem");
+      this.openssl(
+        [
+          "req",
+          "-x509",
+          "-newkey",
+          "rsa:2048",
+          "-nodes",
+          "-sha256",
+          "-days",
+          "365",
+          "-keyout",
+          keyPath,
+          "-out",
+          certPath,
+          "-subj",
+          `/C=CL/O=${escape(businessName)}/OU=Representacion Tributaria/CN=${escape(repName)} ${escape(repRut)}`,
+        ],
+        finalPassword,
+      );
+      const pfx = this.openssl(
+        [
+          "pkcs12",
+          "-export",
+          "-inkey",
+          keyPath,
+          "-in",
+          certPath,
+          "-passout",
+          "env:CMOR_PFX_PASSWORD",
+        ],
+        finalPassword,
+      );
+      return {
+        pfxBase64: pfx.toString("base64"),
+        password: finalPassword,
+        certificatePem: readFileSync(certPath, "utf8"),
+        privateKeyPem: readFileSync(keyPath, "utf8"),
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 }

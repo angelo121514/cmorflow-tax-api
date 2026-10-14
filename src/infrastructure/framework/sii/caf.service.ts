@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import * as forge from 'node-forge';
+import { createPrivateKey, generateKeyPairSync, sign, KeyObject } from 'node:crypto';
 
 export interface CafData {
   issuerRut: string;
@@ -111,10 +111,11 @@ export class CafService {
   createSimulationCaf(issuerRut: string, type: number, rangeFrom = 1, rangeTo = 1000): string {
     // RSA-2048 mínimo: NIST prohíbe RSA-1024 desde 2013, el SII exige mínimo 2048 bits.
     const RSA_KEY_SIZE = 2048;
-    const keys = forge.pki.rsa.generateKeyPair(RSA_KEY_SIZE);
+    const keys = generateKeyPairSync('rsa', { modulusLength: RSA_KEY_SIZE });
+    const jwk = keys.publicKey.export({ format: 'jwk' });
     const today = new Date().toISOString().slice(0, 10);
-    const modulus = this.bigIntToBase64(keys.publicKey.n);
-    const exponent = this.bigIntToBase64(keys.publicKey.e);
+    const modulus = Buffer.from(jwk.n!, 'base64url').toString('base64');
+    const exponent = Buffer.from(jwk.e!, 'base64url').toString('base64');
     const daXml =
       `<DA>` +
       `<RE>${issuerRut}</RE>` +
@@ -125,15 +126,13 @@ export class CafService {
       `<RSAPK><M>${modulus}</M><E>${exponent}</E></RSAPK>` +
       `</DA>`;
 
-    const md = forge.md.sha1.create();
-    md.update(daXml, 'utf8');
-    const signature = forge.util.encode64(keys.privateKey.sign(md));
+    const signature = sign('RSA-SHA1', Buffer.from(daXml), keys.privateKey).toString('base64');
 
     // El SII entrega el CAF como <AUTORIZACION>: el bloque <CAF> se incorpora al
     // TED y la llave privada RSASK se usa exclusivamente para firmar ese TED.
     // Mantener la misma forma en simulación evita ocultar errores de integración.
-    const privatePem = forge.pki.privateKeyToPem(keys.privateKey);
-    const publicPem = forge.pki.publicKeyToPem(keys.publicKey);
+    const privatePem = keys.privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+    const publicPem = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
     return `<AUTORIZACION><CAF version="1.0">${daXml}<FRMA algoritmo="SHA1withRSA">${signature}</FRMA></CAF><RSASK>${privatePem}</RSASK><RSAPUBK>${publicPem}</RSAPUBK></AUTORIZACION>`;
   }
 
@@ -143,7 +142,7 @@ export class CafService {
    * - En fixtures antiguos se acepta RSASK en base64 para compatibilidad local.
    * Retorna null si no se encuentra la clave en el CAF.
    */
-  extractPrivateKey(cafXml: string): forge.pki.rsa.PrivateKey | null {
+  extractPrivateKey(cafXml: string): KeyObject | null {
     const privateKeyPem = this.extractPrivateKeyPem(cafXml);
     if (!privateKeyPem) {
       return null;
@@ -163,16 +162,17 @@ export class CafService {
     }
 
     try {
-      const privatePem = forge.util.decode64(value);
+      const privatePem = Buffer.from(value, 'base64').toString('utf8');
       return /-----BEGIN(?: RSA)? PRIVATE KEY-----/.test(privatePem) ? privatePem : null;
     } catch {
       return null;
     }
   }
 
-  privateKeyFromPem(privateKeyPem: string): forge.pki.rsa.PrivateKey | null {
+  privateKeyFromPem(privateKeyPem: string): KeyObject | null {
     try {
-      return forge.pki.privateKeyFromPem(privateKeyPem);
+      const key = createPrivateKey(privateKeyPem);
+      return key.asymmetricKeyType === 'rsa' ? key : null;
     } catch {
       return null;
     }
@@ -212,11 +212,4 @@ export class CafService {
       .replace(/&apos;/g, "'");
   }
 
-  private bigIntToBase64(value: forge.jsbn.BigInteger): string {
-    let hex = value.toString(16);
-    if (hex.length % 2 !== 0) {
-      hex = `0${hex}`;
-    }
-    return forge.util.encode64(forge.util.hexToBytes(hex));
-  }
 }

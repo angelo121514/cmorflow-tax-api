@@ -1,20 +1,30 @@
 # Aprovisionamiento de tenants
 
-## Estado
+## Instalación independiente: procedimiento soportado
 
-El repositorio no contiene una ruta HTTP, comando de provisioning ni runbook aprobado para crear un tenant y completar su perfil tributario. La API presupone que el `tenant_id` ya existe y que una credencial válida está asociada a él. Por seguridad, este documento no inventa un procedimiento SQL ni afirma que `admin:bootstrap` aprovisione clientes.
+Desde 2026-10-14 existe `npm run tenant:provision -- --standalone perfil.json`. Operaciones ejecuta con acceso autorizado a una base de propiedad exclusiva de Tax API y migraciones aplicadas. El sistema fuente de este modo es el archivo de alta aprobado por Producto/Operaciones, sin secretos. El comando no se utiliza sobre la base compartida del ERP.
 
-## Secuencia de alta propuesta, pendiente de autorización operativa
+```json
+{
+  "tenantId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "rut": "76086428-5",
+  "businessName": "Empresa de prueba",
+  "taxProfile": {
+    "giro": "Servicios", "activities": ["620100"],
+    "address": "Calle de prueba 1", "commune": "Santiago", "city": "Santiago",
+    "resolutionDate": "2026-01-01", "resolutionNumber": 0
+  }
+}
+```
 
-El alta sigue este orden cuando Operaciones identifique y apruebe su sistema fuente y operador. Los pasos marcados como bloqueados requieren ese procedimiento autorizado; no se deben sustituir por SQL manual ni por una ruta no soportada.
+1. Aplicar migraciones y respaldar según la instalación. Revisar RUT, UUID, razón social y resolución con el responsable tributario; el ejemplo es sintético.
+2. Ejecutar el comando. Crea tenant, perfil y auditoría en una transacción; rechaza duplicados y campos inválidos, no actualiza identidades existentes ni habilita T46. Si falla, se revierte toda el alta.
+3. Ejecutar `npm run admin:bootstrap -- UUID` y entregar el secreto mostrado una sola vez mediante el canal seguro del operador. Si este paso falla, el tenant permanece sin credencial: repetir bootstrap tras diagnosticar, sin repetir el alta.
+4. Cargar PFX/CAF mediante la API administrativa, configurar recursos externos y verificar aislamiento y contratos en staging.
+5. Completar el [gate SII](SII_CERTIFICATION_CHECKLIST.md) antes de habilitar emisión real. Registrar operador, aprobación y evidencia; una prueba local no acredita staging.
 
-1. **Identidad y alta base — bloqueado:** registrar el tenant/RUT en el sistema fuente aprobado y obtener su `tenant_id`.
-2. **Perfil tributario — bloqueado:** completar razón social y configuración fiscal mediante el proceso soportado. `TenantConfigService.saveTaxProfile` es interno y no constituye una interfaz de provisioning.
-3. **Acceso administrativo:** crear una credencial `admin` ligada al tenant desde el flujo autorizado de administración y entregar el secreto una sola vez por canal seguro.
-4. **Configuración de emisión:** cargar CAF, certificado PFX y configuración de emisor; revisar alcance y permisos de la credencial.
-5. **Verificación:** en el ambiente SII de certificación acordado, probar firma, emisión, consulta del TrackID y acceso a XML/PDF; guardar evidencia con fecha, versión y responsable.
-6. **Habilitación productiva:** sólo después de que el propietario tributario apruebe la evidencia y Operaciones confirme el tenant, monitoreo y rotación de secretos.
+Recuperación: fallo de alta hace rollback. Después de crear una credencial o emitir, no borrar tenant/folios como rollback; revocar credenciales y bloquear emisión bajo el procedimiento operativo autorizado. El perfil puede corregirse por el mantenedor con una ficha y evidencia revisadas.
 
-## Bloqueo pendiente
+## Base compartida con ERP
 
-Operaciones/Producto deben identificar el sistema fuente, el operador autorizado, la forma soportada de alta/actualización y el proceso de baja. `TenantConfigService.saveTaxProfile` existe, pero no hay controlador ni comando que lo exponga. Hasta aprobar ese runbook, el provisioning sigue siendo precondición externa y no se debe habilitar un tenant basándose sólo en una inserción manual.
+El sistema fuente sigue siendo externo; D-007 permanece bloqueada para ese modo hasta identificar proceso y responsable del ERP. No se inventa una ruta HTTP ni se modifica el ERP. TASK-004 queda parcialmente resuelta: CLI y pruebas de base independiente disponibles, aprobación y ejecución staging aún externas.

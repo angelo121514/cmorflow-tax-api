@@ -29,3 +29,9 @@ Cada regla refleja el código local, no una validación legal externa.
 | BR-23 | `dte:cancel` no se otorga en API v1 hasta que exista ruta y flujo tributario aprobados.                                     | Se conserva `cancelled` como estado interno, pero el permiso ya no forma parte del catálogo v1.                                                               | integration-errors.ts; DECISIONS.md                                                    |
 
 Las reglas tributarias anotadas por código deben validarse contra normativa y certificación vigente antes de tratarlas como autoridad legal.
+
+## Corrección de fiabilidad — 2026-10-14
+
+La preparación vincula reserva, documento y solicitud en una transacción PostgreSQL. `integration_requests.transmission_started_at` se persiste antes del envío externo; un resultado ambiguo exige conciliación y no se retransmite automáticamente. El estado y los eventos/entregas webhook forman una outbox transaccional usando las tablas existentes. La entrega HTTP sigue siendo al menos una vez; el receptor deduplica por event ID. Mutaciones de configuración parten de fila fresca y conservan folios al recargar CAF; se rechazan rangos superpuestos.
+
+Las pruebas de fallos y concurrencia están en test/reliability.e2e-spec.ts; resultados actuales en [VALIDATION_REPORT](VALIDATION_REPORT.md). Un rollback del marcador se rechaza deliberadamente para no perder evidencia de envíos ambiguos. Aplicar migraciones antes de iniciar el nuevo worker.

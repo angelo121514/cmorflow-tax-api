@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException, Optional } 
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
+import { tenantTransaction, currentTenantManager } from '../postgres/tenant-transaction';
 import { IDataServices } from '@domain';
 import { Aes256Cipher } from '../../../infrastructure/framework/crypto/aes-256-cipher';
 import { CafService, CafData } from './caf.service';
@@ -110,8 +111,7 @@ export class TenantConfigService {
     tenantId: string,
     operation: (repository: Repository<TenantConfigEntity>) => Promise<R>,
   ): Promise<R> {
-    return this.configRepo.manager.transaction(async (manager) => {
-      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    return tenantTransaction(this.configRepo.manager, tenantId, async (manager) => {
       return operation(manager.getRepository(TenantConfigEntity));
     });
   }
@@ -123,7 +123,7 @@ export class TenantConfigService {
   public async getConfig(tenantId: string): Promise<TenantConfig> {
     // 1. Verificar cache
     const cached = this.configCache.get(tenantId);
-    if (cached && cached.expires > Date.now()) {
+    if (!currentTenantManager(tenantId) && cached && cached.expires > Date.now()) {
       // Nunca entregar la referencia almacenada: los métodos de configuración
       // la modifican antes de persistir y una referencia mutable convertiría el
       // caché en una escritura implícita y potencialmente obsoleta.
@@ -138,11 +138,11 @@ export class TenantConfigService {
       const config: TenantConfig = !record ? { cafs: [] } : (record.configJson as TenantConfig);
 
       // 3. Actualizar cache
-      this.configCache.set(tenantId, { data: structuredClone(config), expires: Date.now() + this.CONFIG_TTL_MS });
+      if (!currentTenantManager(tenantId)) this.configCache.set(tenantId, { data: structuredClone(config), expires: Date.now() + this.CONFIG_TTL_MS });
       return structuredClone(config);
     } catch (error) {
       this.logger.error(`Error leyendo configuración del tenant ${tenantId}:`, error);
-      return { cafs: [] };
+      throw error;
     }
   }
 
@@ -150,7 +150,7 @@ export class TenantConfigService {
    * Fase 4: activa/desactiva features IA para el tenant (opt-in).
    */
   public async setAiEnabled(tenantId: string, enabled: boolean): Promise<{ aiEnabled: boolean; aiOptInDate: string | null }> {
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
     if (enabled) {
       config.aiEnabled = true;
       config.aiOptInDate = config.aiOptInDate ?? new Date().toISOString();
@@ -158,7 +158,7 @@ export class TenantConfigService {
       config.aiEnabled = false;
       delete config.aiOptInDate;
     }
-    await this.saveConfig(tenantId, config);
+    });
     return { aiEnabled: !!config.aiEnabled, aiOptInDate: config.aiOptInDate ?? null };
   }
 
@@ -171,29 +171,7 @@ export class TenantConfigService {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(profileId)) {
       throw new BadRequestException('El identificador del perfil visual no es válido.');
     }
-    // Esta mutación comparte tenant_configs.config_json con el contador de
-    // folios. Lee la fila fresca y toma el mismo lock que reserveFolioAtomic,
-    // para no reescribir un lastUsedFolio recién reservado desde un caché.
-    await this.configRepo.manager.transaction(async (manager) => {
-      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
-      const repository = manager.getRepository(TenantConfigEntity);
-      const record = await repository.findOne({
-        where: { tenantId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (record) {
-        const freshConfig = record.configJson as TenantConfig;
-        freshConfig.activeBrandProfileId = profileId;
-        record.configJson = freshConfig as any;
-        await repository.save(record);
-      } else {
-        await repository.save(repository.create({
-          tenantId,
-          configJson: { cafs: [], activeBrandProfileId: profileId },
-        }));
-      }
-    });
-    this.invalidateCache(tenantId);
+    await this.mutateConfig(tenantId, (config) => { config.activeBrandProfileId = profileId; });
   }
 
   /**
@@ -212,41 +190,20 @@ export class TenantConfigService {
   }
 
   /**
-   * Guarda la configuración completa de un tenant en PostgreSQL (upsert).
+   * Muta sólo los campos solicitados sobre una fila fresca bloqueada.
    * Invalida el cache después de guardar.
    */
-  private async saveConfig(tenantId: string, config: TenantConfig): Promise<void> {
-    await this.withTenantRepository(tenantId, async (repository) => {
-      // Las operaciones administrativas parten de una copia que puede haber
-      // quedado en caché. Tomar el lock y releer la fila evita que esa copia
-      // borre el perfil visual seleccionado por otra petición mientras se
-      // actualizaba, por ejemplo, un CAF o la firma.
-      const existing = await repository.findOne({
-        where: { tenantId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (existing) {
-        const freshConfig = existing.configJson as TenantConfig;
-        const configToSave: TenantConfig = { ...config };
-
-        // Sólo setActiveBrandProfileId puede modificar esta referencia. Las
-        // demás escrituras preservan siempre la versión que estaba fijada en
-        // la fila bloqueada, incluso si su copia de caché era anterior.
-        if (freshConfig.activeBrandProfileId === undefined) {
-          delete configToSave.activeBrandProfileId;
-        } else {
-          configToSave.activeBrandProfileId = freshConfig.activeBrandProfileId;
-        }
-
-        existing.configJson = configToSave as any;
-        await repository.save(existing);
-      } else {
-        await repository.save(repository.create({ tenantId, configJson: config as any }));
-      }
+  private async mutateConfig(tenantId: string, mutate: (config: TenantConfig) => void): Promise<TenantConfig> {
+    const result = await this.withTenantRepository(tenantId, async (repository) => {
+      await repository.manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [tenantId]);
+      const existing = await repository.findOne({ where: { tenantId }, lock: { mode: 'pessimistic_write' } });
+      const config: TenantConfig = structuredClone(existing?.configJson as TenantConfig || { cafs: [] });
+      mutate(config);
+      await repository.save(existing ? { ...existing, configJson: config } : repository.create({ tenantId, configJson: config }));
+      return config;
     });
-
-    // Invalidar cache después de mutación
     this.invalidateCache(tenantId);
+    return result;
   }
 
   /**
@@ -277,7 +234,7 @@ export class TenantConfigService {
 
     const encryptedPass = this.aesCipher.encrypt(passwordString, this.masterKey);
 
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
 
     // 3. Crear flujo de renovación y archivar firma anterior con historial
     if (config.signature) {
@@ -313,14 +270,14 @@ export class TenantConfigService {
       type: certificateType,
     };
 
-    await this.saveConfig(tenantId, config);
+    });
 
     return {
       success: true,
       message: 'Firma digital encriptada con AES-256-GCM y guardada de forma segura en PostgreSQL.',
-      subjectName: config.signature.subjectName,
-      validTo: config.signature.validTo,
-      fingerprint: config.signature.fingerprint,
+      subjectName: config.signature!.subjectName,
+      validTo: config.signature!.validTo,
+      fingerprint: config.signature!.fingerprint,
     };
   }
 
@@ -374,15 +331,18 @@ export class TenantConfigService {
       );
     }
 
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
     
+    const overlaps = config.cafs.filter((c) => c.type === cafData.type && c.rangeFrom <= cafData.rangeTo && c.rangeTo >= cafData.rangeFrom);
+    if (overlaps.some((c) => c.rangeFrom !== cafData.rangeFrom || c.rangeTo !== cafData.rangeTo)) throw new BadRequestException('El rango CAF se superpone con otro CAF cargado.');
+    cafData.lastUsedFolio = Math.max(overlaps[0]?.lastUsedFolio ?? cafData.rangeFrom - 1, cafData.lastUsedFolio ?? cafData.rangeFrom - 1);
     // Evitar CAFs duplicados para el mismo tipo y rango
     config.cafs = config.cafs.filter(
       (c) => !(c.type === cafData.type && c.rangeFrom === cafData.rangeFrom),
     );
     config.cafs.push(cafData);
 
-    await this.saveConfig(tenantId, config);
+    });
 
     return {
       success: true,
@@ -415,14 +375,14 @@ export class TenantConfigService {
     if (!provider.businessName || typeof provider.businessName !== 'string') {
       throw new BadRequestException('La razón social del proveedor de software es obligatoria.');
     }
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
     config.softwareProvider = {
       rut: provider.rut.trim(),
       businessName: provider.businessName.trim(),
     };
-    await this.saveConfig(tenantId, config);
+    });
     this.logger.log(`Proveedor de software configurado para tenant ${tenantId}: ${provider.rut}`);
-    return config.softwareProvider;
+    return config.softwareProvider!;
   }
 
   /**
@@ -434,7 +394,7 @@ export class TenantConfigService {
 
   public async saveTaxProfile(tenantId: string, profile: TenantTaxProfile): Promise<TenantTaxProfile> {
     this.assertValidTaxProfile(profile);
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
     config.taxProfile = {
       ...profile,
       giro: profile.giro.trim(),
@@ -443,8 +403,8 @@ export class TenantConfigService {
       commune: profile.commune.trim(),
       city: profile.city.trim(),
     };
-    await this.saveConfig(tenantId, config);
-    return config.taxProfile;
+    });
+    return config.taxProfile!;
   }
 
   /**
@@ -485,7 +445,7 @@ export class TenantConfigService {
     tenantId: string,
     dteType: number,
     folio: number,
-  ): Promise<{ cafXml: string; cafPrivateKey: import('node-forge').pki.rsa.PrivateKey }> {
+  ): Promise<{ cafXml: string; cafPrivateKey: import('node:crypto').KeyObject }> {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
     if (isProduction && isDefaultMasterKey(this.masterKey)) {
       throw new BadRequestException(
@@ -507,7 +467,7 @@ export class TenantConfigService {
       );
     }
 
-    let cafPrivateKey: import('node-forge').pki.rsa.PrivateKey | null = null;
+    let cafPrivateKey: import('node:crypto').KeyObject | null = null;
     if (caf.privateKeyEncrypted) {
       try {
         const privateKeyPem = this.aesCipher.decrypt(
@@ -661,7 +621,7 @@ export class TenantConfigService {
    */
   public async saveSimulatedExpiringSignature(tenantId: string): Promise<any> {
     this.logger.log(`Registrando firma simulada de expiración (15 días) para el inquilino ${tenantId}...`);
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
 
     const fifteenDaysFromNow = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
 
@@ -677,7 +637,7 @@ export class TenantConfigService {
       type: CertificateType.MOCK,
     };
 
-    await this.saveConfig(tenantId, config);
+    });
 
     // Ejecutar el getter de estado para disparar proactivamente la advertencia en consola
     return this.getSignatureStatus(tenantId);
@@ -692,7 +652,7 @@ export class TenantConfigService {
   ): Promise<{ pfxBase64: string; passwordString: string; metadata: any } | null> {
     // 1. Verificar cache de firma desencriptada
     const cachedSig = this.signatureCache.get(tenantId);
-    if (cachedSig && cachedSig.expires > Date.now()) {
+    if (!currentTenantManager(tenantId) && cachedSig && cachedSig.expires > Date.now()) {
       return cachedSig.data;
     }
 
@@ -740,7 +700,7 @@ export class TenantConfigService {
       };
 
       // Cachear firma desencriptada con TTL corto
-      this.signatureCache.set(tenantId, { data: result, expires: Date.now() + this.SIGNATURE_TTL_MS });
+      if (!currentTenantManager(tenantId)) this.signatureCache.set(tenantId, { data: result, expires: Date.now() + this.SIGNATURE_TTL_MS });
 
       return result;
     } catch (e) {
@@ -756,10 +716,11 @@ export class TenantConfigService {
    * Si no (ej. en pruebas unitarias), usa el fallback no-transaccional.
    */
   public async reserveFolioAtomic(tenantId: string, dteType: number): Promise<number> {
-    const folio = await this.configRepo.manager.transaction(async (transactionalEntityManager) => {
+    const folio = await tenantTransaction(this.configRepo.manager, tenantId, async (transactionalEntityManager) => {
       // RLS también debe estar fijado dentro de esta transacción: el lock y
       // la escritura no pueden depender del contexto CLS de otra conexión.
       await transactionalEntityManager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      await transactionalEntityManager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [tenantId]);
       // 1. Obtener la fila con un bloqueo de escritura pesimista
       const record = await transactionalEntityManager.findOne(TenantConfigEntity, {
         where: { tenantId },
@@ -854,7 +815,7 @@ export class TenantConfigService {
    */
   public async saveFolioThresholds(tenantId: string, thresholds: Record<string, number>): Promise<any> {
     this.logger.log(`Guardando umbrales de folios para tenant: ${tenantId}...`);
-    const config = await this.getConfig(tenantId);
+    const config = await this.mutateConfig(tenantId, (config) => {
     
     config.lowStockThresholds = {};
     for (const [key, value] of Object.entries(thresholds)) {
@@ -864,7 +825,7 @@ export class TenantConfigService {
       }
     }
 
-    await this.saveConfig(tenantId, config);
+    });
     return {
       success: true,
       message: 'Umbrales de stock bajo de folios actualizados correctamente.',

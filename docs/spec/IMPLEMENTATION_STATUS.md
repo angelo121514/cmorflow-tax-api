@@ -18,3 +18,7 @@ Revisión 2026-10-13. Baseline de runtime a2aef05; esta entrega sólo cambia lic
 El gate de dependencias actual detecta avisos high/critical en paquetes existentes: TASK-007. La entrega no está habilitada para integrar hasta obtener backend aprobado.
 
 CI 38484270148 aprobó 140 unitarios, 10 e2e PostgreSQL 16, checker, OpenAPI y Docker; el job falla sólo por el gate de dependencias. Ver [evidencia](VALIDATION_REPORT.md).
+
+## Corrección 2026-10-14
+
+Se implementan mutaciones frescas de CAF/config, preparación atómica y outbox sobre tablas existentes. El marcador de transmisión bloquea reenvíos ambiguos. Se elimina node-forge, actualizan dependencias y se configura obtención externa de recursos sin licencia documentada. Provisioning CLI está disponible sólo para base independiente. TASK-005 y la validación operativa staging siguen externas. El estado histórico anterior se conserva; resultados vigentes en [VALIDATION_REPORT](VALIDATION_REPORT.md).

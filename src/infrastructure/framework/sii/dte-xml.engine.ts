@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DiscountEngine } from './discount.engine';
-import * as forge from 'node-forge';
+import { KeyObject, sign } from 'node:crypto';
 import { CafService } from './caf.service';
 import { BuiltDteXml, DteBuildInput, DteLineItem, DteTotals, EnvioDteInput, SupportedDteType, RcofInput } from './dte-types';
 import { Iso88591Encoder } from './iso-8859-1.encoder';
@@ -332,7 +332,7 @@ export class DteXmlEngine {
 
 
 
-  private buildTed(input: DteBuildInput, totals: DteTotals, issueDate: string, cafXml: string, cafPrivateKey: forge.pki.rsa.PrivateKey): string {
+  private buildTed(input: DteBuildInput, totals: DteTotals, issueDate: string, cafXml: string, cafPrivateKey: KeyObject): string {
     const firstItem = input.items[0]?.name || DTE_NAMES[input.type];
     const ddXml =
       `<DD>` +
@@ -382,10 +382,8 @@ export class DteXmlEngine {
    * El SII rechaza el 100% de los DTEs firmados con una clave que no corresponde
    * al CAF autorizado. ISSUE-001.
    */
-  private signTedData(ddXml: string, cafPrivateKey: forge.pki.rsa.PrivateKey): string {
-    const md = forge.md.sha1.create();
-    md.update(ddXml, 'utf8');
-    return forge.util.encode64(cafPrivateKey.sign(md));
+  private signTedData(ddXml: string, cafPrivateKey: KeyObject): string {
+    return sign('RSA-SHA1', Buffer.from(ddXml, 'utf8'), cafPrivateKey).toString('base64');
   }
 
   private stripXmlDeclaration(xml: string): string {

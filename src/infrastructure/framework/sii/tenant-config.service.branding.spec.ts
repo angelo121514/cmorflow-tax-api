@@ -13,13 +13,14 @@ describe('TenantConfigService — perfil visual activo', () => {
     };
     const repository = {
       findOne: jest.fn().mockResolvedValue(record),
-      save: jest.fn().mockImplementation(async (value) => value),
+      save: jest.fn().mockImplementation(async (value) => { Object.assign(record, value); return value; }),
       create: jest.fn().mockImplementation((value) => value),
     };
     const manager: any = {
       query: jest.fn().mockResolvedValue(undefined),
       getRepository: jest.fn().mockReturnValue(repository),
     };
+    (repository as any).manager = manager;
     manager.transaction = jest.fn(async (operation) => operation(manager));
     const service = new TenantConfigService(
       { manager } as any,
@@ -56,11 +57,13 @@ describe('TenantConfigService — perfil visual activo', () => {
     await service.getConfig(tenantId);
     // Otra petición fija la marca antes de que la primera persista su cambio.
     record.configJson.activeBrandProfileId = brandProfileId;
+    record.configJson.cafs[0].lastUsedFolio = 29;
 
     await service.setAiEnabled(tenantId, true);
 
     expect(record.configJson.activeBrandProfileId).toBe(brandProfileId);
     expect(record.configJson.aiEnabled).toBe(true);
+    expect(record.configJson.cafs[0].lastUsedFolio).toBe(29);
     expect(repository.findOne).toHaveBeenLastCalledWith({
       where: { tenantId },
       lock: { mode: 'pessimistic_write' },

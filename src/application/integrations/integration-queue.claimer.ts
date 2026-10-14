@@ -56,6 +56,7 @@ export class IntegrationQueueClaimer {
            max_attempts AS "maxAttempts", next_attempt_at AS "nextAttemptAt",
            locked_at AS "lockedAt", last_error AS "lastError",
            state_history AS "stateHistory", response_snapshot AS "responseSnapshot",
+           transmission_started_at AS "transmissionStartedAt",
            submitted_at AS "submittedAt", finalized_at AS "finalizedAt",
            request.created_at AS "createdAt", request.updated_at AS "updatedAt"`,
           [IntegrationQueueClaimer.LOCK_TIMEOUT_SECONDS, limit],

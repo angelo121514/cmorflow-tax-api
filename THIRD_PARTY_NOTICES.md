@@ -11,3 +11,9 @@ Inventario revisado el 2026-10-13. MIT se aplica al código original de CmorFlow
 | Dependencias npm                                                                                                                              | Versiones exactas en package-lock.json; cada paquete conserva su licencia y avisos en su distribución                                                                             | No se relicencian. Al redistribuir node_modules o una imagen, conservar los avisos incluidos                            |
 
 Esta revisión identifica avisos y lagunas observables; no afirma una autorización global sobre recursos sin licencia declarada.
+
+## Resolución 2026-10-14
+
+Los ocho XSD SII sin autorización documentada y la CA Supabase se retiraron de la distribución actual. El operador obtiene sus recursos directamente de sus fuentes y los monta externamente; ver [esquemas](src/infrastructure/framework/sii/xsd/README.md) y [TLS](certs/README.md). No se afirma un permiso de redistribución para copias históricas de esos recursos.
+
+XMLDSig conserva su aviso W3C. node-forge se eliminó; Node crypto/OpenSSL procesan certificados y firmas. Las dependencias restantes conservan sus licencias propias. El historial Git no se reescribe en esta corrección.

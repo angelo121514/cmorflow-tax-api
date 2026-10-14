@@ -4,6 +4,16 @@ Este archivo registra cambios visibles para integradores y mantenedores. Las dec
 
 ## Unreleased
 
+### Seguridad y recuperación — 2026-10-14
+
+- Sustituye node-forge por Node crypto/OpenSSL; actualiza dependencias y runner Jest.
+- Reserva, DTE y vínculo atómicos; mutaciones de configuración conservan folios y rechazan CAF superpuestos.
+- Estado y eventos/entregas forman una outbox transaccional; envíos SII ambiguos requieren conciliación sin retransmisión automática.
+- Migración añade transmission_started_at; aplicar antes del worker. No admite rollback que pierda ese marcador.
+- XSD SII y CA Supabase ahora se proveen externamente; montar recursos antes de actualizar en entornos reales. Docker incluye OpenSSL.
+- CLI tenant:provision para una base independiente; bootstrap usa RLS y transacción.
+
+
 ### MIT y alineación SDD — 2026-10-13
 
 - Código original bajo MIT; avisos separados para recursos externos.

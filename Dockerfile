@@ -10,7 +10,7 @@ FROM node:22.12.0-bookworm-slim AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends dumb-init libxml2-utils ca-certificates \
+    && apt-get install -y --no-install-recommends dumb-init libxml2-utils ca-certificates openssl \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
