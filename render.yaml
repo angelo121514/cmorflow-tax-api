@@ -14,7 +14,7 @@ services:
     dockerContext: .
     preDeployCommand: node start-migrate.js
     healthCheckPath: /api/v1/ready
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: off
     envVars:
       - fromGroup: cmorflow-tax-production
       - key: NODE_ENV
@@ -47,7 +47,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: node start-worker.js
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: off
     maxShutdownDelaySeconds: 300
     envVars:
       - fromGroup: cmorflow-tax-production

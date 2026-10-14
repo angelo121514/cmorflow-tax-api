@@ -1,3 +1,4 @@
+import { TransmissionRecoveryFence1805900000000 } from '../src/database/migrations/1805900000000-TransmissionRecoveryFence';
 import { DataSource } from 'typeorm';
 import { AddIntegrationsApi1805000000000 } from '../src/database/migrations/1805000000000-AddIntegrationsApi';
 import { WorkerRlsPolicy1805100000000 } from '../src/database/migrations/1805100000000-WorkerRlsPolicy';
@@ -34,6 +35,7 @@ describePostgres('PostgreSQL migrations, RLS, idempotency and queue claims', () 
         AddCronNonces1805400000000,
         IntegrationRequestResourceKey1805600000000,
         AllowSystemIntegrationRequests1805800000000,
+        TransmissionRecoveryFence1805900000000,
       ],
       migrationsTableName: 'typeorm_migrations',
     });
@@ -120,6 +122,7 @@ describePostgres('PostgreSQL migrations, RLS, idempotency and queue claims', () 
       'AddCronNonces1805400000000',
       'IntegrationRequestResourceKey1805600000000',
       'AllowSystemIntegrationRequests1805800000000',
+      'TransmissionRecoveryFence1805900000000',
     ]);
     // Las 4 tablas del motor (dte_documents, etc.) no existen en esta BD de
     // prueba: su política se omite y quedan las 5 de las tablas B2B.

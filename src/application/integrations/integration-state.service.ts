@@ -1,10 +1,13 @@
+import { DataSource } from "typeorm";
+import { tenantTransaction } from "../../infrastructure/framework/postgres/tenant-transaction";
+import { IntegrationRequestEntity as RequestRow } from "../../infrastructure/framework/postgres/entities/integration-request.entity";
 // backend/src/application/integrations/integration-state.service.ts
-import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
-import { IDataServices, IntegrationRequestEntity } from '@domain';
-import { IntegrationApiException } from './integration-api.exception';
-import { IntegrationErrorCode } from './integration-errors';
-import { PrometheusService } from '../../infrastructure/logger/prometheus.service';
+import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
+import { firstValueFrom } from "rxjs";
+import { IDataServices, IntegrationRequestEntity } from "@domain";
+import { IntegrationApiException } from "./integration-api.exception";
+import { IntegrationErrorCode } from "./integration-errors";
+import { PrometheusService } from "../../infrastructure/logger/prometheus.service";
 
 /** Backoff de reintentos para fallos recuperables (1m, 5m, 15m, 60m, 6h). */
 export const INTEGRATION_RETRY_BACKOFF_MS = [
@@ -16,7 +19,7 @@ export const INTEGRATION_RETRY_BACKOFF_MS = [
 ];
 
 /** Contrato del despachador de eventos webhook (implementado en M3). */
-export const INTEGRATION_EVENT_DISPATCHER = 'INTEGRATION_EVENT_DISPATCHER';
+export const INTEGRATION_EVENT_DISPATCHER = "INTEGRATION_EVENT_DISPATCHER";
 export interface IntegrationEventDispatcher {
   dispatchForRequest(
     request: IntegrationRequestEntity,
@@ -29,42 +32,48 @@ export interface IntegrationEventDispatcher {
 /** Estados internos del DTE → estado público B2B. */
 export function mapDteStatusToPublic(dteStatus?: string | null): string | null {
   switch (dteStatus) {
-    case 'BORRADOR':
-    case 'FIRMADO':
-      return 'processing';
-    case 'ENVIADO':
-      return 'submitted';
-    case 'ACEPTADO':
-      return 'accepted';
-    case 'REPARO':
-      return 'observed';
-    case 'RECHAZADO':
-      return 'rejected';
-    case 'ANULADO':
-      return 'cancelled';
+    case "BORRADOR":
+    case "FIRMADO":
+      return "processing";
+    case "ENVIADO":
+      return "submitted";
+    case "ACEPTADO":
+      return "accepted";
+    case "REPARO":
+      return "observed";
+    case "RECHAZADO":
+      return "rejected";
+    case "ANULADO":
+      return "cancelled";
     default:
       return null;
   }
 }
 
 /** Estados que generan evento webhook. */
-const NOTIFIABLE_STATES = new Set(['submitted', 'accepted', 'observed', 'rejected', 'failed']);
+const NOTIFIABLE_STATES = new Set([
+  "submitted",
+  "accepted",
+  "observed",
+  "rejected",
+  "failed",
+]);
 
 /** Estados terminales (no admiten transiciones salientes excepto reintento manual). */
-const TERMINAL_STATES = new Set(['accepted', 'rejected', 'cancelled']);
+const TERMINAL_STATES = new Set(["accepted", "rejected", "cancelled"]);
 
 /**
  * State machine de solicitudes B2B: sólo se permiten las transiciones listadas.
  * Cualquier transición fuera de este mapa lanza INVALID_STATE_TRANSITION.
  */
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  queued: ['processing', 'cancelled'],
-  processing: ['submitted', 'failed', 'cancelled'],
-  submitted: ['accepted', 'observed', 'rejected', 'failed'],
+  queued: ["processing", "cancelled"],
+  processing: ["submitted", "failed", "cancelled"],
+  submitted: ["accepted", "observed", "rejected", "failed"],
   accepted: [], // terminal
-  observed: ['accepted', 'rejected'], // puede corregirse tras reparo
+  observed: ["accepted", "rejected"], // puede corregirse tras reparo
   rejected: [], // terminal
-  failed: ['processing'], // reintento manual
+  failed: ["processing"], // reintento manual
   cancelled: [], // terminal
 };
 
@@ -89,11 +98,54 @@ export class IntegrationStateService {
     private readonly eventDispatcher?: IntegrationEventDispatcher,
     @Optional()
     private readonly metrics?: PrometheusService,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
 
   async applyState(
     request: IntegrationRequestEntity,
-    newState: IntegrationRequestEntity['state'],
+    newState: IntegrationRequestEntity["state"],
+    detail: string,
+    extra?: { trackId?: string | null },
+  ): Promise<IntegrationRequestEntity> {
+    if (this.dataSource?.options?.type === "postgres") {
+      return tenantTransaction(
+        this.dataSource.manager,
+        request.tenantId,
+        async (manager) => {
+          const persisted = await manager
+            .getRepository(RequestRow)
+            .findOneOrFail({
+              where: { id: request.id, tenantId: request.tenantId },
+              lock: { mode: "pessimistic_write" },
+            });
+          // Preserve pending retry/error metadata, but authoritative state/history
+          // come from the locked row, preventing duplicate transition events.
+          return this.persistState(
+            {
+              ...request,
+              state: persisted.state,
+              stateHistory: persisted.stateHistory,
+            },
+            newState,
+            detail,
+            extra,
+          );
+        },
+      );
+    }
+    const updated = await this.persistState(
+      structuredClone(request),
+      newState,
+      detail,
+      extra,
+    );
+    Object.assign(request, updated);
+    return updated;
+  }
+
+  private async persistState(
+    request: IntegrationRequestEntity,
+    newState: IntegrationRequestEntity["state"],
     detail: string,
     extra?: { trackId?: string | null },
   ): Promise<IntegrationRequestEntity> {
@@ -113,12 +165,17 @@ export class IntegrationStateService {
     request.state = newState;
     request.stateHistory = [
       ...(request.stateHistory || []),
-      { state: newState, timestamp: new Date().toISOString(), detail, from: previousState },
+      {
+        state: newState,
+        timestamp: new Date().toISOString(),
+        detail,
+        from: previousState,
+      },
     ];
-    if (newState === 'submitted') {
+    if (newState === "submitted") {
       request.submittedAt = new Date();
     }
-    if (TERMINAL_STATES.has(newState) || newState === 'failed') {
+    if (TERMINAL_STATES.has(newState) || newState === "failed") {
       request.finalizedAt = new Date();
     }
     if (extra?.trackId !== undefined) {
@@ -128,31 +185,48 @@ export class IntegrationStateService {
     const updated = await firstValueFrom(
       this.dataServices.integrationRequest.update(request.id!, request as any),
     );
-    this.logger.log(`Solicitud ${request.id}: ${previousState} → ${newState} (${detail})`);
-    this.metrics?.integrationRequestsTotal.inc({ kind: request.kind, result: newState });
-    if (newState === 'submitted' && request.createdAt) {
+    this.logger.log(
+      `Solicitud ${request.id}: ${previousState} → ${newState} (${detail})`,
+    );
+    this.metrics?.integrationRequestsTotal.inc({
+      kind: request.kind,
+      result: newState,
+    });
+    if (newState === "submitted" && request.createdAt) {
       this.metrics?.integrationRequestDurationSeconds.observe(
-        { kind: request.kind, phase: 'to_submitted' },
-        Math.max(0, (Date.now() - new Date(request.createdAt).getTime()) / 1000),
+        { kind: request.kind, phase: "to_submitted" },
+        Math.max(
+          0,
+          (Date.now() - new Date(request.createdAt).getTime()) / 1000,
+        ),
       );
     }
-    if (['accepted', 'observed', 'rejected'].includes(newState) && request.createdAt) {
+    if (
+      ["accepted", "observed", "rejected"].includes(newState) &&
+      request.createdAt
+    ) {
       this.metrics?.integrationRequestDurationSeconds.observe(
-        { kind: request.kind, phase: 'to_finalized' },
-        Math.max(0, (Date.now() - new Date(request.createdAt).getTime()) / 1000),
+        { kind: request.kind, phase: "to_finalized" },
+        Math.max(
+          0,
+          (Date.now() - new Date(request.createdAt).getTime()) / 1000,
+        ),
       );
     }
-    if (newState === 'rejected') this.metrics?.siiRejectionsTotal.inc({ document_type: String((request.payload as any)?.documentType ?? 'unknown') });
+    if (newState === "rejected")
+      this.metrics?.siiRejectionsTotal.inc({
+        document_type: String(
+          (request.payload as any)?.documentType ?? "unknown",
+        ),
+      });
 
     if (NOTIFIABLE_STATES.has(newState) && this.eventDispatcher) {
-      try {
-        await this.eventDispatcher.dispatchForRequest(updated!, newState, detail);
-      } catch (err) {
-        // La notificación jamás rompe la transición; el reconciler reintenta.
-        this.logger.warn(`No se pudo disparar webhook de ${newState}: ${(err as Error).message}`);
-      }
+      // Persisting the outbox must succeed or the state transition rolls back.
+      // Delivery HTTP remains asynchronous in deliverDue.
+      await this.eventDispatcher.dispatchForRequest(updated!, newState, detail);
     }
-    return updated!;  }
+    return updated!;
+  }
 
   /** Programa el siguiente intento con backoff acotado; agotado → failed. */
   async scheduleRetry(
@@ -160,14 +234,22 @@ export class IntegrationStateService {
     error: { code: string; message: string; retryable: true },
   ): Promise<IntegrationRequestEntity> {
     request.attempts = (request.attempts || 0) + 1;
-    this.metrics?.integrationRetriesTotal.inc({ kind: request.kind, error_code: error.code });
+    this.metrics?.integrationRetriesTotal.inc({
+      kind: request.kind,
+      error_code: error.code,
+    });
     request.lastError = error;
     if (request.attempts >= (request.maxAttempts || 5)) {
-      return this.applyState(request, 'failed', `Reintentos agotados: ${error.message}`);
+      return this.applyState(
+        request,
+        "failed",
+        `Reintentos agotados: ${error.message}`,
+      );
     }
-    const backoff = INTEGRATION_RETRY_BACKOFF_MS[
-      Math.min(request.attempts - 1, INTEGRATION_RETRY_BACKOFF_MS.length - 1)
-    ];
+    const backoff =
+      INTEGRATION_RETRY_BACKOFF_MS[
+        Math.min(request.attempts - 1, INTEGRATION_RETRY_BACKOFF_MS.length - 1)
+      ];
     request.nextAttemptAt = new Date(Date.now() + backoff);
     const updated = await firstValueFrom(
       this.dataServices.integrationRequest.update(request.id!, request as any),

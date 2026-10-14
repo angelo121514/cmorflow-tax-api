@@ -45,3 +45,9 @@ Registra migraciones con up/down y explica los riesgos de rollback. Las reglas t
 Usa ramas cortas con nombres descriptivos y PRs centrados en un cambio. Explica qué problema resuelves, el comportamiento resultante y la validación realmente ejecutada. Registra limitaciones y resultados omitidos. Actualiza CHANGELOG.md para cambios visibles al integrador o al mantenedor.
 
 Aplica el [código de conducta](CODE_OF_CONDUCT.md). Para vulnerabilidades utiliza el [procedimiento privado](SECURITY.md).
+
+## Licencia y definición de terminado
+
+Los aportes originales se realizan bajo [MIT](LICENSE). Conserva avisos y condiciones de terceros; consulta [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md).
+
+Antes de implementar, revisa la [constitución](docs/spec/CONSTITUTION.md), el [modelo de amenazas](docs/spec/THREAT_MODEL.md) y las [tareas](docs/spec/TASKS.md). Un cambio termina cuando su ficha, criterios, referencias y pruebas están actualizados, CI aprueba y las limitaciones quedan en el [estado de implementación](docs/spec/IMPLEMENTATION_STATUS.md) y el [informe de validación](docs/spec/VALIDATION_REPORT.md). La comprobación estructural no sustituye revisión semántica.

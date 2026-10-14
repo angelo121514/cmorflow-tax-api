@@ -3,6 +3,25 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const CHANGE_DIR = "docs/spec/changes";
+const GOVERNANCE_DOCS = [
+  "CONSTITUTION.md",
+  "THREAT_MODEL.md",
+  "PLAN.md",
+  "TASKS.md",
+  "IMPLEMENTATION_STATUS.md",
+  "VALIDATION_REPORT.md",
+  "COMPARISON_REPORT.md",
+].map((name) => "docs/spec/" + name);
+const TASK_FIELDS = [
+  "ID",
+  "Prioridad",
+  "Estado",
+  "Responsable",
+  "Dependencia",
+  "Criterio de aceptación",
+  "Evidencia exigida",
+  "Referencias",
+];
 const FENCE = String.fromCharCode(96).repeat(3);
 const SECTIONS = [
   "Problema y resultado esperado",
@@ -82,6 +101,49 @@ function validateRepository(root, diff) {
       fail(label + ": " + error.message);
     }
   };
+  // Governance links are local file references; anchors are allowed but not
+  // interpreted as proof of semantic coverage. External links are not fetched.
+  for (const file of GOVERNANCE_DOCS) {
+    const text = read(file);
+    if (text.trim().length < 40)
+      fail(file + ": documento obligatorio vacío o incompleto.");
+    for (const match of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+      const ref = match[1];
+      if (/^https?:\/\//i.test(ref)) continue;
+      const filename = ref.split("#")[0];
+      if (!filename) continue;
+      const relative = path
+        .relative(root, path.resolve(root, path.dirname(file), filename))
+        .replace(/\\/g, "/");
+      checkRef(relative, file);
+    }
+  }
+  const tasks = tableRows(read("docs/spec/TASKS.md"));
+  if (JSON.stringify(tasks[0]) !== JSON.stringify(TASK_FIELDS))
+    fail("Tareas: encabezado inválido; se exigen " + TASK_FIELDS.join(", "));
+  if (tasks.length < 3) fail("Tareas: falta seguimiento.");
+  const taskIds = new Set();
+  for (const [index, row] of tasks.slice(2).entries()) {
+    const label = "Tareas: fila " + (index + 3);
+    if (
+      row.length !== TASK_FIELDS.length ||
+      row.some((cell) => !cell || /^(?:-|TBD|TODO|N\/A)$/i.test(cell))
+    ) {
+      fail(
+        label +
+          ": faltan campos de seguimiento (responsable, dependencia, aceptación y evidencia obligatorios).",
+      );
+      continue;
+    }
+    if (!/^TASK-\d{3}$/.test(row[0]) || taskIds.has(row[0]))
+      fail(label + ": ID inválido o duplicado.");
+    taskIds.add(row[0]);
+    if (!/^P[012]$/.test(row[1])) fail(label + ": prioridad inválida.");
+    if (!["Pendiente", "En curso", "Bloqueada", "Completada"].includes(row[2]))
+      fail(label + ": estado inválido.");
+    if (!/\[[^\]]+\]\([^)]+\)/.test(row[7]))
+      fail(label + ": faltan referencias verificables.");
+  }
   function checkTable(file, codeCol) {
     const rows = tableRows(read(file));
     if (
@@ -436,7 +498,13 @@ function main() {
       : "Validación estructural; use --base-ref <ref> --worktree para revisar cambios locales.",
   );
 }
-module.exports = { validateRepository, gitDiff, relevantChange, repoPath };
+module.exports = {
+  validateRepository,
+  gitDiff,
+  relevantChange,
+  repoPath,
+  GOVERNANCE_DOCS,
+};
 if (require.main === module) {
   try {
     main();

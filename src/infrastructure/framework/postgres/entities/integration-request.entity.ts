@@ -75,6 +75,9 @@ export class IntegrationRequestEntity {
   @Column({ name: 'response_snapshot', type: 'jsonb', nullable: true })
   responseSnapshot?: any;
 
+  @Column({ name: 'transmission_started_at', type: 'timestamptz', nullable: true })
+  transmissionStartedAt?: Date | null;
+
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submittedAt?: Date | null;
 

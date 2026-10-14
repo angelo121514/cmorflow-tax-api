@@ -27,10 +27,16 @@ En angelo121514/cmorflow-tax-api se habilitaron reportes privados de vulnerabili
 
 Actualiza CHANGELOG.md y el estado del README. Define versión y etiqueta sólo después de revisar el resultado de CI. Marca como experimental cualquier versión cuya certificación SII o reglas tributarias sigan pendientes.
 
-Conserva una vía reproducible de instalación con Node 22, PostgreSQL 16 y modo SII mock. No distribuyas archivos de entorno reales, PFX ni CAF privados. El certificado público de confianza en certs/ no es una llave privada.
+Conserva una vía reproducible de instalación con Node 22, PostgreSQL 16 y modo SII mock. No distribuyas archivos de entorno reales, PFX ni CAF privados. La CA y los esquemas SII se proveen externamente; consulta certs/README.md y el README del directorio xsd.
 
-La decisión de licencia queda pendiente para una tarea posterior. La apertura pública y el despliegue requieren sus decisiones correspondientes; este procedimiento prepara la revisión.
+Desde 2026-10-13 el código original se distribuye bajo MIT. Verifica LICENSE y la licencia raíz de ambos manifiestos; conserva los avisos de THIRD_PARTY_NOTICES.md. La publicación npm sigue deshabilitada por private: true. El despliegue y la certificación mantienen sus gates propios.
 
 ## Aprobaciones externas
 
 DECISIONS.md mantiene los bloqueos de T46 y provisioning. La certificación SII debe tener fecha, versión, ambiente y responsable. Un resultado de tests mock o un tag de Git no aprueba esos puntos.
+
+## Publicación 1.0.0-oss.1
+
+La edición de código abierto usa la rama main del repositorio actual. README, LICENSE, manifiestos y avisos deben ser coherentes. El tag v1.0.0-oss.1 identifica una prerelease; publicar código no certifica SII.
+
+Antes de fusionar: verificar Auto-Deploy Off en el servicio asociado, dejar ambos servicios del Blueprint con autoDeployTrigger: off, conservar despliegue previo y exigir CI sobre la cabecera exacta del PR. Después del squash: esperar CI de main, crear la release sobre el SHA resultante y confirmar MIT, protección de rama, reportes privados y ausencia de nuevos despliegues. No ejecutar migraciones ni disparar deploy al publicar.

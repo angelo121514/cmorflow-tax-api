@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { tenantTransaction } from './tenant-transaction';
 import { Observable, from } from 'rxjs';
 import { ClsService } from 'nestjs-cls';
 import { ForbiddenException } from '@nestjs/common';
@@ -36,8 +37,7 @@ export class PostgresGenericRepository<T> implements IGenericRepository<T> {
     this.assertTenantContext();
     if (!this.isTenantScoped) return operation(this.repository);
     const tenantId = this.tenantId!;
-    return this.repository.manager.transaction(async (manager) => {
-      await manager.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    return tenantTransaction(this.repository.manager, tenantId, async (manager) => {
       return operation(manager.getRepository(this.repository.target));
     });
   }

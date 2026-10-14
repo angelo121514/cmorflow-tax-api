@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { CafService } from './caf.service';
 import { DiscountEngine } from './discount.engine';
 import { DteXmlEngine } from './dte-xml.engine';
@@ -8,7 +9,7 @@ describe('DteXmlEngine — descuentos XML estándar', () => {
       parse: jest.fn().mockReturnValue({ rawXml: '<CAF version="1.0" />' }),
       assertFolioAllowed: jest.fn(),
     } as unknown as CafService;
-    const cafPrivateKey = { sign: jest.fn().mockReturnValue('firma-caf-de-prueba') };
+    const cafPrivateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
     const engine = new DteXmlEngine(cafService, new DiscountEngine());
 
     const result = engine.buildDte({

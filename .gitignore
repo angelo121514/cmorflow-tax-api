@@ -14,3 +14,8 @@ tsconfig.tsbuildinfo
 
 # ZCode local
 .zcode/
+
+# Operator-provided SII schemas and trust roots
+src/infrastructure/framework/sii/xsd/*.xsd
+!src/infrastructure/framework/sii/xsd/xmldsignature_v10.xsd
+certs/*.crt

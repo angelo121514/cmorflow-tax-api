@@ -25,7 +25,7 @@ export class SiiXsdValidator {
       return;
     }
 
-    const defaultSchemaPath = join(__dirname, 'xsd', 'EnvioDTE_v10.xsd');
+    const defaultSchemaPath = join(this.configService.get<string>('SII_XSD_DIR', join(__dirname, 'xsd')), 'EnvioDTE_v10.xsd');
     const schemaPath = this.configService.get<string>('SII_ENVIO_DTE_XSD_PATH', defaultSchemaPath);
 
 
@@ -120,7 +120,7 @@ export class SiiXsdValidator {
       return;
     }
 
-    const defaultSchemaPath = join(__dirname, 'xsd', 'EnvioBOLETA_v11.xsd');
+    const defaultSchemaPath = join(this.configService.get<string>('SII_XSD_DIR', join(__dirname, 'xsd')), 'EnvioBOLETA_v11.xsd');
     const schemaPath = this.configService.get<string>('SII_ENVIO_BOLETA_XSD_PATH', defaultSchemaPath);
 
     const workDir = await mkdtemp(join(tmpdir(), 'sii-xsd-boleta-'));
@@ -205,7 +205,7 @@ export class SiiXsdValidator {
       return;
     }
 
-    const defaultSchemaPath = join(__dirname, 'xsd', 'ConsumoFolio_v10.xsd');
+    const defaultSchemaPath = join(this.configService.get<string>('SII_XSD_DIR', join(__dirname, 'xsd')), 'ConsumoFolio_v10.xsd');
     const schemaPath = this.configService.get<string>('SII_CONSUMO_FOLIO_XSD_PATH', defaultSchemaPath);
 
     const workDir = await mkdtemp(join(tmpdir(), 'sii-xsd-rcof-'));
@@ -270,7 +270,7 @@ export class SiiXsdValidator {
       return;
     }
 
-    const defaultSchemaPath = join(__dirname, 'xsd', 'CAF_v10.xsd');
+    const defaultSchemaPath = join(this.configService.get<string>('SII_XSD_DIR', join(__dirname, 'xsd')), 'CAF_v10.xsd');
     const schemaPath = this.configService.get<string>('SII_CAF_XSD_PATH', defaultSchemaPath);
 
     const workDir = await mkdtemp(join(tmpdir(), 'sii-caf-xsd-'));
@@ -327,7 +327,7 @@ export class SiiXsdValidator {
       return;
     }
 
-    const defaultSchemaPath = join(__dirname, 'xsd', 'LibroCV_v10.xsd');
+    const defaultSchemaPath = join(this.configService.get<string>('SII_XSD_DIR', join(__dirname, 'xsd')), 'LibroCV_v10.xsd');
     const schemaPath = this.configService.get<string>('SII_LIBRO_CV_XSD_PATH', defaultSchemaPath);
     await this.validateAgainstSchema(xml, schemaPath, 'libro-cv.xml', 'El Libro Compra/Venta no cumple el XSD oficial del SII.');
   }

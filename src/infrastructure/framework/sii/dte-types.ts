@@ -1,4 +1,4 @@
-import * as forge from 'node-forge';
+import { KeyObject } from 'node:crypto';
 import { DteTaxRetention, SoftwareProvider } from './dte-domain-rules';
 
 export type SupportedDteType = 33 | 34 | 39 | 41 | 46 | 52 | 56 | 61;
@@ -55,7 +55,7 @@ export interface DteBuildInput {
    * el vault del tenant y entregado al motor sólo durante la firma.
    * En simulación puede extraerse del archivo de autorización completo.
    */
-  cafPrivateKey?: forge.pki.rsa.PrivateKey;
+  cafPrivateKey?: KeyObject;
   references?: DteReference[];
   indTraslado?: number;
   /**

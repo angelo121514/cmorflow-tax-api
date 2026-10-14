@@ -45,13 +45,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
       - run: npm run repo:check
       - run: npm run sdd:test
-      - run: npm run sdd:check
+      - name: Validate SDD diff, governance documents and task tracking
+        run: npm run sdd:check
       - run: npm run build
       - run: npm test -- --silent
       - run: npm run test:e2e -- --runInBand
       - run: npm run openapi:check
       - run: npx prettier --check render.yaml
       - run: docker build --tag cmorflow-tax-api:ci .
+      - name: Dependency security gate
+        run: npm audit --omit=dev --audit-level=moderate

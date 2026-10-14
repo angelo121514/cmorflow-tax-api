@@ -1,5 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import * as forge from 'node-forge';
+import { CertificateUtils } from './certificate.utils';
 import { SignedXml } from 'xml-crypto';
 
 @Injectable()
@@ -27,28 +27,8 @@ export class SignatureEngine {
     this.logger.log('Iniciando firmado digital criptográfico REAL de DTE XML (XMLDSig)...');
 
     try {
-      // 1. Extraer la llave privada y certificado del PFX/P12
-      const p12Der = forge.util.decode64(certificateBase64);
-      const p12Asn1 = forge.asn1.fromDer(p12Der);
-      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
+      const { privateKeyPem, certificatePem: certPem } = CertificateUtils.extractKeyPair(certificateBase64, password);
 
-      // Obtener llave privada
-      const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-      const privateKeyBag = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0];
-      if (!privateKeyBag || !privateKeyBag.key) {
-        throw new Error('No se encontró una llave privada válida en el archivo P12/PFX.');
-      }
-      const privateKey = privateKeyBag.key as forge.pki.rsa.PrivateKey;
-
-      // Obtener certificado X.509 público
-      const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
-      const certBag = certBags[forge.pki.oids.certBag]?.[0];
-      if (!certBag || !certBag.cert) {
-        throw new Error('No se encontró un certificado X.509 válido en el archivo P12/PFX.');
-      }
-      const cert = certBag.cert;
-      const certPem = forge.pki.certificateToPem(cert);
-      
       // Limpiar PEM del certificado para tener la cadena pura en Base64
       const certCleanBase64 = certPem
         .replace(/-----BEGIN CERTIFICATE-----/, '')
@@ -63,7 +43,7 @@ export class SignatureEngine {
         throw new Error(`No se encontró un nodo con ID="${targetElementId}" en el XML suministrado.`);
       }
       const signer = new SignedXml({
-        privateKey: forge.pki.privateKeyToPem(privateKey),
+        privateKey: privateKeyPem,
         publicCert: certPem,
         signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
         canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',

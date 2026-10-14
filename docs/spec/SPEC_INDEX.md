@@ -50,3 +50,9 @@ Partir de la fila Feature, leer la ruta en API_SPEC y sus reglas en BUSINESS_RUL
 ## Referencias verificables y cambios
 
 CI comprueba que los enlaces a specs, código y tests existen. Para cada cambio relevante se exige una ficha nueva o actualizada en changes/ que declare los archivos del diff. Consulta [CONTRIBUTING.md](../../CONTRIBUTING.md) para el procedimiento y comandos.
+
+## Gobierno SDD y licencia
+
+- [Constitución](CONSTITUTION.md), [amenazas](THREAT_MODEL.md) y [plan](PLAN.md).
+- [Tareas](TASKS.md), [estado](IMPLEMENTATION_STATUS.md) y [validación](VALIDATION_REPORT.md).
+- [Comparación](COMPARISON_REPORT.md) con los proyectos de referencia.

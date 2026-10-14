@@ -65,3 +65,9 @@ Migraciones:
 9. 1805700000000-InvoiceBrandProfiles agrega marca versionada, FK snapshot y RLS.
 
 RLS usa tenant_id::text = current_setting('app.tenant_id', true), con app.worker_scope=true para worker. Credentials/nonces son globales; estado remoto de roles/grants/policies: desconocido.
+
+## Corrección de fiabilidad — 2026-10-14
+
+La preparación vincula reserva, documento y solicitud en una transacción PostgreSQL. `integration_requests.transmission_started_at` se persiste antes del envío externo; un resultado ambiguo exige conciliación y no se retransmite automáticamente. El estado y los eventos/entregas webhook forman una outbox transaccional usando las tablas existentes. La entrega HTTP sigue siendo al menos una vez; el receptor deduplica por event ID. Mutaciones de configuración parten de fila fresca y conservan folios al recargar CAF; se rechazan rangos superpuestos.
+
+Las pruebas de fallos y concurrencia están en test/reliability.e2e-spec.ts; resultados actuales en [VALIDATION_REPORT](VALIDATION_REPORT.md). Un rollback del marcador se rechaza deliberadamente para no perder evidencia de envíos ambiguos. Aplicar migraciones antes de iniciar el nuevo worker.

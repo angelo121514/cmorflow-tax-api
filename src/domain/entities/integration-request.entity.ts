@@ -52,6 +52,7 @@ export class IntegrationRequestEntity {
   stateHistory: any[];
   /** Respuesta 202 original para replay idempotente. */
   responseSnapshot?: any;
+  transmissionStartedAt?: Date | null;
   submittedAt?: Date | null;
   finalizedAt?: Date | null;
   createdAt?: Date;

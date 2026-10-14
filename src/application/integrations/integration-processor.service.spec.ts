@@ -119,7 +119,7 @@ describe('IntegrationProcessorService — folio único, reintentos y polling', (
     expect(emitDteUseCase.transmit).toHaveBeenCalledTimes(1);
   });
 
-  it('fallo de transmisión → reintento programado con backoff (no failed prematuro)', async () => {
+  it('fallo ambiguo de transmisión → cuarentena sin retransmisión automática', async () => {
     await seedRequest();
     const dte = await dteRepo
       .create({ tenantId, type: 39, folio: 101, status: 'FIRMADO' } as any)
@@ -135,9 +135,11 @@ describe('IntegrationProcessorService — folio único, reintentos y polling', (
     const updated = (await repo.getAll().toPromise())!.find(
       (r: any) => r.dteId === dte!.id,
     )!;
-    expect(updated.state).not.toBe('failed');
+    expect(updated.state).toBe('failed');
     expect(updated.lastError.code).toBe('SII_UNAVAILABLE');
-    expect(new Date(updated.nextAttemptAt).getTime()).toBeGreaterThan(Date.now());
+    expect(updated.lastError.retryable).toBe(false);
+    await processor.processDue(5);
+    expect(emitDteUseCase.transmit).toHaveBeenCalledTimes(1);
   });
 
   it('pollSubmitted consolida ACEPTADO del DTE → estado público accepted + evento', async () => {
